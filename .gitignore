@@ -35,6 +35,9 @@ venv.bak/
 .env.local
 .env.*.local
 
+# Credentials
+CREDENTIALS.md
+
 # IDE
 .vscode/
 .idea/
