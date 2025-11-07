@@ -159,11 +159,12 @@ async def record_match(ctx, hunter: str = None, trait: str = None, persona: str 
             survivor_text = ""
             for i, s in enumerate(survivors, 1):
                 char = s.get("character") or "不明"
-                kite = s.get("kite_time") or "-"
-                decode = s.get("decode_progress") or "-"
-                board = s.get("board_hits") if s.get("board_hits") else "-"
-                rescue = s.get("rescues") if s.get("rescues") else "-"
-                heal = s.get("heals") if s.get("heals") else "-"
+                # Noneの場合は"-"に変換
+                kite = s.get("kite_time") if s.get("kite_time") is not None else "-"
+                decode = s.get("decode_progress") if s.get("decode_progress") is not None else "-"
+                board = s.get("board_hits") if s.get("board_hits") is not None else "-"
+                rescue = s.get("rescues") if s.get("rescues") is not None else "-"
+                heal = s.get("heals") if s.get("heals") is not None else "-"
 
                 survivor_text += f"`{i}.` **{char}**\n"
                 survivor_text += f"   牽制: {kite} | 解読: {decode}\n"

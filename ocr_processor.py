@@ -125,18 +125,52 @@ class OCRProcessor:
 
             # デバッグ: 結果の構造を確認
             print(f"[DEBUG] yomitoku result type: {type(results)}")
-            if isinstance(results, dict):
-                print(f"[DEBUG] yomitoku result keys: {results.keys()}")
 
             # yomitokuの結果をeasyocrの形式に変換
             # easyocr形式: [(bbox, text, confidence), ...]
             ocr_results = []
 
             # yomitokuの結果を解析
-            # 結果は通常、'blocks'または'pages'という形式
+            # yomitokuのバージョン0.10.1では、結果はtupleで (pages_data, ocr_results) の形式
             text_blocks = []
 
-            if isinstance(results, dict):
+            if isinstance(results, tuple) and len(results) >= 1:
+                # tuple形式: yomitoku 0.10.1では3要素
+                # (DocumentAnalyzerSchema, None, None)
+                # 最初の要素がDocumentAnalyzerSchemaオブジェクト
+                doc_schema = results[0]
+
+                # DocumentAnalyzerSchemaからOCR結果を取得
+                # yomitoku 0.10.1では、wordsに単語レベルのOCR結果が含まれる
+                if hasattr(doc_schema, 'words') and doc_schema.words:
+                    print(f"[INFO] Found {len(doc_schema.words)} words")
+
+                    for word in doc_schema.words:
+                        # yomitokuの構造: content (text), points (bbox), rec_score (confidence)
+                        if hasattr(word, 'content') and hasattr(word, 'points'):
+                            text_blocks.append({
+                                'text': word.content,
+                                'bbox': word.points,
+                                'score': getattr(word, 'rec_score', 1.0)
+                            })
+
+                # paragraphsも試す（より長いテキスト単位） - 重複を避けるため、wordsが空の場合のみ
+                if not text_blocks and hasattr(doc_schema, 'paragraphs') and doc_schema.paragraphs:
+                    print(f"[INFO] Found {len(doc_schema.paragraphs)} paragraphs")
+
+                    for para in doc_schema.paragraphs:
+                        if hasattr(para, 'content') and hasattr(para, 'bbox'):
+                            text_blocks.append({
+                                'text': para.content,
+                                'bbox': para.bbox,
+                                'score': getattr(para, 'score', 1.0)
+                            })
+
+                print(f"[DEBUG] Extracted {len(text_blocks)} text elements from document schema")
+
+            elif isinstance(results, dict):
+                # dict形式（旧バージョン対応）
+                print(f"[DEBUG] yomitoku result keys: {results.keys()}")
                 # pagesから全ブロックを取得
                 if 'pages' in results and len(results['pages']) > 0:
                     page = results['pages'][0]
@@ -149,52 +183,68 @@ class OCRProcessor:
                     print(f"[DEBUG] Number of blocks: {len(text_blocks)}")
 
             # デバッグ: 最初の数ブロックを表示
+            print(f"[DEBUG] Sample of text_blocks (type: {type(text_blocks)}):")
             for i, block in enumerate(text_blocks[:3]):
-                print(f"  Block {i}: {block}")
+                print(f"  Block {i} (type: {type(block)}): {block}")
 
             for block in text_blocks:
-                # bboxを取得
-                bbox_data = block.get('bbox', None)
-                text = block.get('text', '')
-                confidence = block.get('score', 1.0)  # yomitokuは'score'を使用
+                # blockがdictの場合
+                if isinstance(block, dict):
+                    # bboxを取得
+                    bbox_data = block.get('bbox', None)
+                    text = block.get('text', '')
+                    confidence = block.get('score', 1.0)  # yomitokuは'score'を使用
+                elif isinstance(block, (list, tuple)) and len(block) >= 3:
+                    # tuple/list形式: (bbox, text, confidence)
+                    bbox_data = block[0]
+                    text = block[1]
+                    confidence = block[2] if len(block) > 2 else 1.0
+                else:
+                    continue
 
                 if bbox_data and text:
                     # bboxを[[x1,y1], [x2,y1], [x2,y2], [x1,y2]]形式に変換
-                    if len(bbox_data) == 4:  # [x1, y1, x2, y2]形式の場合
-                        x1, y1, x2, y2 = bbox_data
-                        bbox_formatted = [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
-                    elif len(bbox_data) == 8:  # [x1, y1, x2, y2, x3, y3, x4, y4]形式の場合
-                        bbox_formatted = [
-                            [bbox_data[0], bbox_data[1]],
-                            [bbox_data[2], bbox_data[3]],
-                            [bbox_data[4], bbox_data[5]],
-                            [bbox_data[6], bbox_data[7]]
-                        ]
+                    if isinstance(bbox_data, list):
+                        if len(bbox_data) == 4 and all(isinstance(coord, (int, float)) for coord in bbox_data):
+                            # [x1, y1, x2, y2]形式の場合
+                            x1, y1, x2, y2 = bbox_data
+                            bbox_formatted = [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
+                        elif len(bbox_data) == 8:
+                            # [x1, y1, x2, y2, x3, y3, x4, y4]形式の場合
+                            bbox_formatted = [
+                                [bbox_data[0], bbox_data[1]],
+                                [bbox_data[2], bbox_data[3]],
+                                [bbox_data[4], bbox_data[5]],
+                                [bbox_data[6], bbox_data[7]]
+                            ]
+                        else:
+                            # 既に[[x1,y1], [x2,y2], ...]形式の場合
+                            bbox_formatted = bbox_data
                     else:
                         bbox_formatted = bbox_data
 
                     ocr_results.append((bbox_formatted, text, confidence))
 
-            print(f"✅ yomitokuで{len(ocr_results)}個のテキストブロックを検出")
+            print(f"[SUCCESS] yomitoku detected {len(ocr_results)} text blocks")
 
             # デバッグ: 最初の数個の結果を表示
             for i, (bbox, text, conf) in enumerate(ocr_results[:5]):
-                print(f"  結果{i}: '{text}' (信頼度: {conf:.2f})")
+                print(f"  Result {i}: '{text}' (confidence: {conf:.2f})")
 
             return ocr_results
 
         except Exception as e:
-            print(f"⚠️  yomitoku OCRに失敗しました: {e}")
+            print(f"[WARNING] yomitoku OCR failed: {e}")
             import traceback
             traceback.print_exc()
-            print("easyocrにフォールバック...")
+            print("[INFO] Falling back to easyocr...")
             return self._run_easyocr(img)
 
     def _run_easyocr(self, img: np.ndarray) -> List:
         """easyocrでOCR実行（フォールバック）"""
         # readerが初期化されていない場合は初期化
         if self.reader is None:
-            print("🔄 easyocrを初期化中...")
+            print("[INFO] Initializing easyocr...")
             self.reader = easyocr.Reader(['ja', 'en'], gpu=False)
 
         results = self.reader.readtext(
@@ -207,7 +257,7 @@ class OCRProcessor:
             canvas_size=2560,  # キャンバスサイズを大きく
             mag_ratio=1.5     # 拡大率
         )
-        print(f"✅ easyocrで{len(results)}個のテキストブロックを検出")
+        print(f"[SUCCESS] easyocr detected {len(results)} text blocks")
         return results
     
     def _parse_match_data(self, results: List, img: np.ndarray) -> Dict:
@@ -237,29 +287,28 @@ class OCRProcessor:
             if y_center < 0.3:  # 画面上部30%以内
                 if "勝利" in text or text == "勝":
                     match_data["result"] = "勝利"
-                    print(f"  ✅ 勝利を検出")
+                    print(f"  [DETECTED] Victory")
                 elif "敗北" in text or text == "敗":
                     match_data["result"] = "敗北"
-                    print(f"  ✅ 敗北を検出")
+                    print(f"  [DETECTED] Defeat")
                 elif "辛勝" in text or text == "辛":
                     match_data["result"] = "辛勝"
-                    print(f"  ✅ 辛勝を検出")
+                    print(f"  [DETECTED] Close win")
 
             # マップ名を検出
             for map_name in self.map_names:
                 if map_name in text:
                     match_data["map_name"] = map_name
-                    print(f"  🗺️  マップ: {map_name}")
+                    print(f"  [MAP] {map_name}")
                     break
 
-            # 試合日時を検出（例: "11月2日12:57", "11/2 12:57"）
-            # まず「使用時間」の前の部分だけを抽出
+            # 試合日時を検出（例: "11月2日12:57", "11/2 12:57", "11月2日12.42"）
+            # ピリオド(.)もコロン(:)として扱う
             datetime_patterns = [
                 # "11月2日12:57 使用時間" のような場合、使用時間の前だけマッチ
-                r'(\d{1,2})月(\d{1,2})日[^\d：:]*(\d{1,2}):(\d{2})[^0-9]*使用',
-                r'(\d{1,2})月(\d{1,2})日\s*(\d{1,2}):(\d{2})',  # "11月2日12:57", "11月2日 12:57"
-                r'(\d{1,2})/(\d{1,2})\s*(\d{1,2}):(\d{2})',     # "11/2 12:57"
-                r'(\d{1,2})-(\d{1,2})\s*(\d{1,2}):(\d{2})',     # "11-2 12:57"
+                r'(\d{1,2})月(\d{1,2})日[^\d：:\.]*(\d{1,2})[:．.](\d{2})',
+                r'(\d{1,2})/(\d{1,2})\s*(\d{1,2})[:．.](\d{2})',     # "11/2 12:57", "11/2 12.57"
+                r'(\d{1,2})-(\d{1,2})\s*(\d{1,2})[:．.](\d{2})',     # "11-2 12:57"
             ]
             for pattern in datetime_patterns:
                 dt_match = re.search(pattern, text)
@@ -277,16 +326,16 @@ class OCRProcessor:
                         try:
                             played_datetime = datetime(current_year, month, day, hour, minute)
                             match_data["played_at"] = played_datetime.isoformat()
-                            print(f"  📅 試合日時: {month}月{day}日 {hour}:{minute:02d}")
+                            print(f"  [DATETIME] {month}/{day} {hour}:{minute:02d}")
                         except ValueError:
                             pass  # 無効な日付の場合はスキップ
                     break
 
-            # 使用時間を検出（例: "使用時間:4:17", "使用時間：4:17"）
-            # より厳密なパターンで、日時と区別
+            # 使用時間を検出（例: "使用時間:4:17", "使用時間：4:17", "使用時間 : 5.43"）
+            # ピリオド(.)もコロン(:)として扱う
             time_patterns = [
-                r'使用時間[：:\s]*(\d{1,2}):(\d{2})',  # "使用時間:4:17", "使用時間：4:17"
-                r'時間[：:\s]*(\d{1,2}):(\d{2})',      # "時間:4:17", "時間：4:17"
+                r'使用時間\s*[：:\s]*(\d{1,2})[:．.](\d{2})',  # "使用時間:4:17", "使用時間 : 5.43"
+                r'時間\s*[：:\s]*(\d{1,2})[:．.](\d{2})',      # "時間:4:17", "時間 : 5.43"
             ]
             for pattern in time_patterns:
                 time_match = re.search(pattern, text)
@@ -296,16 +345,16 @@ class OCRProcessor:
                     # 試合時間は通常15分以内
                     if minutes <= 15:
                         match_data["duration"] = f"{minutes}:{seconds:02d}"
-                        print(f"  ⏱️  試合時間: {match_data['duration']}")
+                        print(f"  [DURATION] {match_data['duration']}")
                         break
-        
+
         # サバイバー情報を抽出（画像認識ベース）
         match_data["survivors"] = self._extract_survivors(sorted_results, img)
 
         # 勝敗が検出されなかった場合はデフォルト値を設定
         if match_data["result"] is None:
             match_data["result"] = "不明"
-            print("⚠️  勝敗を検出できませんでした")
+            print("[WARNING] Could not detect match result")
 
         return match_data
     
@@ -316,13 +365,13 @@ class OCRProcessor:
         
         # 1. キャラアイコンの位置を検出（画面サイズ対応）
         icon_positions = self._detect_icon_positions(img)
-        
-        print(f"\n🔍 サバイバー認識開始... (画面サイズ: {width}x{height})")
-        
+
+        print(f"\n[START] Survivor recognition... (Screen size: {width}x{height})")
+
         # 2. 各位置でアイコンを認識
         for position, icon_data in enumerate(icon_positions, 1):
-            print(f"\nサバイバー {position}:")
-            
+            print(f"\nSurvivor {position}:")
+
             # 座標データを展開
             if len(icon_data) == 4:
                 icon_x, icon_y, icon_w, icon_h = icon_data
@@ -330,7 +379,7 @@ class OCRProcessor:
                 # 古い形式（互換性）
                 icon_x, icon_y = icon_data
                 icon_w = icon_h = int(width * self.layout['icon_size_ratio'])
-            
+
             survivor = {
                 "position": position,
                 "character": None,
@@ -340,40 +389,41 @@ class OCRProcessor:
                 "rescues": 0,
                 "heals": 0
             }
-            
+
             # アイコンを画像認識
             char_name = self._match_character_icon(
-                img, 
-                icon_x, 
+                img,
+                icon_x,
                 icon_y,
                 width=icon_w,
                 height=icon_h
             )
-            
+
             if char_name:
                 survivor["character"] = char_name
             else:
-                print(f"  ❌ キャラアイコンを認識できませんでした (位置: x={icon_x}, y={icon_y})")
-            
+                print(f"  [FAILED] Could not recognize character icon (position: x={icon_x}, y={icon_y})")
+
             # その行のテキストデータを取得
             row_data = self._get_row_text_data(results, icon_y + icon_h // 2, height)
-            
+
             # 数値データを抽出
             survivor.update(row_data)
-            
+
             if survivor["character"]:  # キャラが認識できた場合のみ追加
                 survivors.append(survivor)
-        
-        print(f"\n✅ {len(survivors)}人のサバイバーを認識しました\n")
+
+        print(f"\n[SUCCESS] Recognized {len(survivors)} survivors\n")
         
         return survivors
     
     def _get_row_text_data(self, results: List, target_y: int, img_height: int) -> Dict:
         """
         指定Y座標付近のテキストデータから数値情報を抽出
+        ※ グローバルOCR順序で、ラベルの次のテキストを値として使用
 
         Args:
-            results: OCR結果
+            results: OCR結果（グローバル順序）
             target_y: 対象行のY座標
             img_height: 画像の高さ
 
@@ -388,85 +438,161 @@ class OCRProcessor:
             "heals": None
         }
 
-        # target_y付近（画面高さの±8%）のテキストを収集
+        # target_y付近（画面高さの±8%）のテキストを「グローバルresults内で」探す
         tolerance = int(img_height * 0.08)
+
+        # グローバルOCR結果から、この行に関連するテキストを収集
         row_texts = []
-        for bbox, text, conf in results:
+        for idx, (bbox, text, conf) in enumerate(results):
             y_center = (bbox[0][1] + bbox[2][1]) / 2
-
             if abs(y_center - target_y) < tolerance:
-                row_texts.append((bbox, text, conf))
+                row_texts.append((idx, bbox, text, conf))
 
-        # X座標でソート（左から右へ）
-        row_texts.sort(key=lambda x: x[0][0][0])
+        if not row_texts:
+            return data
 
-        # データ抽出（より柔軟なパターンマッチング）
-        detected_numbers = []  # 検出した数字を記録
+        # X座標でソート（左から右へ）、X座標が近い場合はY座標でソート（上から下へ）
+        # X座標を5ピクセル単位で丸めることで、縦に並んでいるテキストを正しくソート
+        def sort_key(item):
+            idx, bbox, text, conf = item
+            x_center = (bbox[0][0] + bbox[2][0]) / 2
+            y_center = (bbox[0][1] + bbox[2][1]) / 2
+            # X座標を5ピクセル単位で丸める
+            x_rounded = round(x_center / 5) * 5
+            return (x_rounded, y_center)
 
-        for bbox, text, conf in row_texts:
-            # デバッグ出力
-            print(f"    行データ: '{text}' (信頼度: {conf:.2f})")
+        row_texts.sort(key=sort_key)
 
-            # テキストをクリーンアップ（スペース、特殊文字除去）
+        # デバッグ出力: この行に含まれるテキストのインデックスと内容
+        print(f"    [DEBUG] Row contains {len(row_texts)} texts")
+        for idx, bbox, text, conf in row_texts:
+            x_center = (bbox[0][0] + bbox[2][0]) / 2
+            y_center = (bbox[0][1] + bbox[2][1]) / 2
+            print(f"    [Global {idx}, X:{x_center:.1f}, Y:{y_center:.1f}] '{text}' (confidence: {conf:.2f})")
+
+        # X座標順（左→右）で、ラベルを検出し、その次のテキストを値として取得
+        # 注意: ラベル検出の順序が重要（より具体的なものを先にチェック）
+        for i, (idx, bbox, text, conf) in enumerate(row_texts):
             clean_text = text.replace(" ", "").replace(",", "").replace(".", "")
 
-            # 牽制時間（例: "20s", "34s", "205"（5→s誤認識）, "1分20s"）
-            time_patterns = [
-                r'(\d+)分(\d+)s',  # "1分20s"
-                r'(\d+)分(\d+)秒',  # "1分20秒"
-                r'(\d+)s',  # "20s"
-                r'(\d+)秒',  # "20秒"
-                r'(\d+)\s*[sS]',  # "20 s", "20S"
-                r'(\d{1,3})5(?=\D|$)',  # "205" (5がsの誤認識)
-            ]
-            for i, pattern in enumerate(time_patterns):
-                time_match = re.search(pattern, clean_text, re.IGNORECASE)
-                if time_match and not data["kite_time"]:
-                    if i <= 1:  # 分秒形式
-                        minutes = int(time_match.group(1))
-                        seconds = int(time_match.group(2))
-                        total_seconds = minutes * 60 + seconds
-                        data["kite_time"] = f"{total_seconds}s"
-                    else:
-                        time_value = time_match.group(1)
-                        data["kite_time"] = time_value + "s"
-                    print(f"  ⏱️  牽制時間: {data['kite_time']}")
-                    break
+            # 解読進捗ラベルを検出
+            if '解読' in text or '進捗' in text or '進排' in text or '進度' in text:
+                print(f"    [DEBUG] Found decode label at row index {i} (global {idx}): '{text}'")
+                # 次のテキストを確認（row_texts内で次）
+                if i + 1 < len(row_texts):
+                    next_idx, next_bbox, next_text, next_conf = row_texts[i + 1]
+                    next_clean = next_text.replace(" ", "").replace(",", "").replace(".", "")
+                    print(f"    [DEBUG] Next text at row index {i+1} (global {next_idx}): '{next_text}'")
 
-            # 解読進捗（例: "112%", "0%", "1129"（9→%誤認識））
-            progress_patterns = [
-                r'(\d{1,3})\s*[%％]',  # "112%", "0 %", 全角パーセント
-                r'(\d{1,3})(?=%)',  # "%"の直前の数字
-                r'(\d{1,3})[9９](?=\D|$)',  # "1129", "112９" (9が%の誤認識)
-            ]
-            for pattern in progress_patterns:
-                progress_match = re.search(pattern, clean_text)
-                if progress_match and not data["decode_progress"]:
-                    progress_value = progress_match.group(1)
-                    data["decode_progress"] = progress_value + "%"
-                    print(f"  📊 解読進捗: {data['decode_progress']}")
-                    break
+                    # パーセント表記を探す
+                    # まず、oを0に変換、gを%に変換
+                    next_clean_normalized = next_clean.replace('o', '0').replace('O', '0').replace('g', '%').replace('G', '%')
 
-            # 単独の数字を抽出（板/救助/治療用）
-            # 既に牽制時間や解読進捗として認識されていない数字のみ
-            number_matches = re.findall(r'\b(\d{1,2})\b', clean_text)
-            for num_str in number_matches:
-                num = int(num_str)
-                # 100以上は解読進捗の可能性があるのでスキップ
-                if num < 100 and num_str not in str(data["kite_time"] or "") and num_str not in str(data["decode_progress"] or ""):
-                    detected_numbers.append(num)
+                    progress_patterns = [
+                        r'(\d{1,3})\s*[%％]',  # "112%", "0%", "100%"
+                        r'(\d{1,3})[9９]',  # "1129" (9が%の誤認識)
+                    ]
+                    for pattern in progress_patterns:
+                        match = re.search(pattern, next_clean_normalized)
+                        if match:
+                            value = match.group(1)
+                            # ０を0に変換
+                            if value == '０':
+                                value = '0'
+                            data["decode_progress"] = value + "%"
+                            print(f"  [DECODE] {data['decode_progress']} (from: '{next_text}')")
+                            break
 
-        # 検出した数字を板/救助/治療に割り当て
-        # 通常は左から順に：板、救助、治療
-        if len(detected_numbers) >= 1:
-            data["board_hits"] = detected_numbers[0]
-            print(f"  🛡️  板当て: {detected_numbers[0]}")
-        if len(detected_numbers) >= 2:
-            data["rescues"] = detected_numbers[1]
-            print(f"  🚑 救助: {detected_numbers[1]}")
-        if len(detected_numbers) >= 3:
-            data["heals"] = detected_numbers[2]
-            print(f"  💊 治療: {detected_numbers[2]}")
+            # 牽制ラベルを検出（「制」「への」でも可）
+            elif '牽制' in text or '制' in text or 'への' in text or 'ハンターへの' in text:
+                print(f"    [DEBUG] Found kite label at row index {i} (global {idx}): '{text}'")
+                # 次のテキストを確認（row_texts内で次）
+                if i + 1 < len(row_texts):
+                    next_idx, next_bbox, next_text, next_conf = row_texts[i + 1]
+                    next_clean = next_text.replace(" ", "").replace(",", "").replace(".", "")
+                    print(f"    [DEBUG] Next text at row index {i+1} (global {next_idx}): '{next_text}'")
+
+                    # 時間表記を探す
+                    # まず、O/o→0、G→6に変換
+                    next_clean_normalized = next_clean.replace('O', '0').replace('o', '0').replace('G', '6').replace('g', '6')
+
+                    time_patterns = [
+                        r'(\d+)分(\d+)[sS秒]',  # "1分20s"
+                        r'(\d+)[sS秒]',  # "20s", "34s", "60s"
+                    ]
+                    for pattern in time_patterns:
+                        match = re.search(pattern, next_clean_normalized)
+                        if match:
+                            if '分' in next_clean_normalized:
+                                minutes = int(match.group(1))
+                                seconds = int(match.group(2))
+                                total_seconds = minutes * 60 + seconds
+                                data["kite_time"] = f"{total_seconds}s"
+                            else:
+                                time_value = match.group(1)
+                                data["kite_time"] = time_value + "s"
+                            print(f"  [KITE] {data['kite_time']} (from: '{next_text}')")
+                            break
+
+            # 援助/救助ラベルを検出（板より前にチェック）
+            elif '援助' in text or '救助' in text:
+                # 次のテキストを確認（row_texts内で次）
+                if i + 1 < len(row_texts):
+                    next_idx, next_bbox, next_text, next_conf = row_texts[i + 1]
+                    next_clean = next_text.replace(" ", "").replace(",", "").replace(".", "")
+
+                    # 次のテキストがラベルでないことを確認
+                    is_label = ('解読' in next_text or '進捗' in next_text or '進排' in next_text or
+                               '牽制' in next_text or '制' in next_text or 'への' in next_text or
+                               '板' in next_text or '援助' in next_text or '救助' in next_text or '治療' in next_text)
+
+                    if not is_label:
+                        # 単独の数字を探す
+                        number_match = re.match(r'^(\d{1,2})$', next_clean)
+                        if number_match:
+                            value = int(number_match.group(1))
+                            data["rescues"] = value
+                            print(f"  [RESCUE] {value} (from: '{next_text}')")
+
+            # 板ラベルを検出（「板命中」全体をチェック）
+            elif '板' in text and '命中' in text:
+                # 次のテキストを確認（row_texts内で次）
+                if i + 1 < len(row_texts):
+                    next_idx, next_bbox, next_text, next_conf = row_texts[i + 1]
+                    next_clean = next_text.replace(" ", "").replace(",", "").replace(".", "")
+
+                    # 次のテキストがラベルでないことを確認
+                    is_label = ('解読' in next_text or '進捗' in next_text or '進排' in next_text or
+                               '牽制' in next_text or '制' in next_text or 'への' in next_text or
+                               '板' in next_text or '援助' in next_text or '救助' in next_text or '治療' in next_text)
+
+                    if not is_label:
+                        # 単独の数字を探す
+                        number_match = re.match(r'^(\d{1,2})$', next_clean)
+                        if number_match:
+                            value = int(number_match.group(1))
+                            data["board_hits"] = value
+                            print(f"  [BOARD] {value} (from: '{next_text}')")
+
+            # 治療ラベルを検出
+            elif '治療' in text:
+                # 次のテキストを確認（row_texts内で次）
+                if i + 1 < len(row_texts):
+                    next_idx, next_bbox, next_text, next_conf = row_texts[i + 1]
+                    next_clean = next_text.replace(" ", "").replace(",", "").replace(".", "")
+
+                    # 次のテキストがラベルでないことを確認
+                    is_label = ('解読' in next_text or '進捗' in next_text or '進排' in next_text or
+                               '牽制' in next_text or '制' in next_text or 'への' in next_text or
+                               '板' in next_text or '援助' in next_text or '救助' in next_text or '治療' in next_text)
+
+                    if not is_label:
+                        # 単独の数字を探す
+                        number_match = re.match(r'^(\d{1,2})$', next_clean)
+                        if number_match:
+                            value = int(number_match.group(1))
+                            data["heals"] = value
+                            print(f"  [HEAL] {value} (from: '{next_text}')")
 
         return data
     
@@ -483,7 +609,7 @@ class OCRProcessor:
             キャラクター名（見つからない場合はNone）
         """
         if not self.icon_templates:
-            print("⚠️  アイコンテンプレートが読み込まれていません")
+            print("[WARNING] Icon templates not loaded")
             return None
 
         # アイコン領域を切り出し（周辺のパディングを含める）
@@ -547,14 +673,14 @@ class OCRProcessor:
         best_char, best_score = sorted_scores[0]
 
         # デバッグ: トップ5を表示
-        print(f"  📊 マッチングスコア (トップ5):")
+        print(f"  [MATCHING] Top 5 scores:")
         for char, score in sorted_scores[:5]:
-            marker = "🎯" if char == best_char else "  "
+            marker = "*" if char == best_char else " "
             print(f"    {marker} {char}: {score:.2%}")
 
         # 閾値チェック（最低40%以上）
         if best_score < 0.40:
-            print(f"  ❌ 最高スコアが閾値未満: {best_score:.2%} < 40%")
+            print(f"  [FAILED] Score below threshold: {best_score:.2%} < 40%")
             return None
 
         # 2位との差が小さすぎる場合は信頼性が低いと判断
@@ -562,10 +688,10 @@ class OCRProcessor:
             second_score = sorted_scores[1][1]
             score_diff = best_score - second_score
             if score_diff < 0.05:  # 5%未満の差
-                print(f"  ⚠️  2位との差が小さい: {score_diff:.2%} (1位: {best_score:.2%}, 2位: {second_score:.2%})")
+                print(f"  [WARNING] Small difference from 2nd place: {score_diff:.2%} (1st: {best_score:.2%}, 2nd: {second_score:.2%})")
                 # それでも採用するが警告を出す
 
-        print(f"  ✅ 認識結果: {best_char} (信頼度: {best_score:.2%})")
+        print(f"  [RECOGNIZED] {best_char} (confidence: {best_score:.2%})")
         return best_char
     
     def _detect_icon_positions(self, img: np.ndarray) -> List[Tuple[int, int]]:
@@ -589,10 +715,10 @@ class OCRProcessor:
         if self.layout.get('use_auto_detect', False):
             detected = self._auto_detect_icons(img, x_start, x_end, y_start, y_end)
             if detected and len(detected) >= 2:  # 2人以上検出できたら採用
-                print(f"✅ 自動検出: {len(detected)}個のアイコン位置を検出")
+                print(f"[AUTO-DETECT] Detected {len(detected)} icon positions")
                 return detected
             else:
-                print("⚠️  自動検出失敗、推定位置を使用")
+                print("[WARNING] Auto-detection failed, using estimated positions")
         
         # フォールバック: 等間隔で推定
         positions = []
