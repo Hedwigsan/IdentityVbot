@@ -34,7 +34,8 @@ class OCRProcessor:
             self.reader = easyocr.Reader(['ja', 'en'], gpu=False)
         
         # キャラアイコンのテンプレート画像（必須）
-        self.icon_templates = {}
+        self.survivor_templates = {}  # サバイバーアイコン
+        self.hunter_templates = {}    # ハンターアイコン
         self._load_icon_templates()
         
         # マップ名リスト
@@ -55,34 +56,69 @@ class OCRProcessor:
     
     def _load_icon_templates(self):
         """キャラアイコンのテンプレート画像を読み込み（必須）"""
-        template_dir = Path("templates/icons")
+        base_dir = Path("templates/icons")
 
-        if not template_dir.exists():
-            print("[WARNING] templates/icons/ directory not found")
-            print("Please add character icon images. See ICON_GUIDE.md for details")
-            return
+        # サバイバーアイコンを読み込み
+        survivor_dir = base_dir / "survivors"
+        if survivor_dir.exists():
+            self._load_templates_from_dir(survivor_dir, self.survivor_templates, "survivor")
 
-        # .pngと.PNGの両方に対応
+        # ハンターアイコンを読み込み
+        hunter_dir = base_dir / "hunters"
+        if hunter_dir.exists():
+            self._load_templates_from_dir(hunter_dir, self.hunter_templates, "hunter")
+
+        # 旧形式の互換性: templates/icons直下にある場合はサバイバーとして扱う
+        if base_dir.exists():
+            for pattern in ["*.png", "*.PNG"]:
+                for icon_file in base_dir.glob(pattern):
+                    char_name = icon_file.stem
+                    if char_name not in self.survivor_templates and char_name not in self.hunter_templates:
+                        try:
+                            with open(icon_file, 'rb') as f:
+                                image_data = f.read()
+                            nparr = np.frombuffer(image_data, np.uint8)
+                            template = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+                            if template is not None:
+                                self.survivor_templates[char_name] = {
+                                    'original': template,
+                                    'sizes': [
+                                        cv2.resize(template, (60, 60)),
+                                        cv2.resize(template, (70, 70)),
+                                        cv2.resize(template, (80, 80)),
+                                        cv2.resize(template, (90, 90)),
+                                    ]
+                                }
+                        except Exception as e:
+                            print(f"[WARNING] Failed to load {char_name}: {e}")
+
+        total = len(self.survivor_templates) + len(self.hunter_templates)
+        if total > 0:
+            print(f"[SUCCESS] Loaded {len(self.survivor_templates)} survivor and {len(self.hunter_templates)} hunter icons")
+        else:
+            print("[WARNING] No character icons found")
+
+    def _load_templates_from_dir(self, directory: Path, templates_dict: dict, char_type: str):
+        """指定ディレクトリからテンプレートを読み込む"""
         for pattern in ["*.png", "*.PNG"]:
-            for icon_file in template_dir.glob(pattern):
+            for icon_file in directory.glob(pattern):
                 char_name = icon_file.stem
-                # 既に読み込み済みの場合はスキップ
-                if char_name in self.icon_templates:
+
+                if char_name in templates_dict:
                     continue
 
-                # Unicodeパス対応のためにnumpyで読み込む
                 try:
                     with open(icon_file, 'rb') as f:
                         image_data = f.read()
                     nparr = np.frombuffer(image_data, np.uint8)
                     template = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                 except Exception as e:
-                    print(f"[WARNING] Failed to load {char_name}: {e}")
+                    print(f"[WARNING] Failed to load {char_type} {char_name}: {e}")
                     continue
 
                 if template is not None:
-                    # 複数サイズのテンプレートを生成（スケール不変性）
-                    self.icon_templates[char_name] = {
+                    templates_dict[char_name] = {
                         'original': template,
                         'sizes': [
                             cv2.resize(template, (60, 60)),
@@ -91,11 +127,6 @@ class OCRProcessor:
                             cv2.resize(template, (90, 90)),
                         ]
                     }
-
-        if self.icon_templates:
-            print(f"[SUCCESS] Loaded {len(self.icon_templates)} character icons")
-        else:
-            print("[WARNING] No character icons found. See ICON_GUIDE.md")
     
     def process_image(self, image_bytes: bytes) -> Dict:
         """画像から試合データを抽出"""
@@ -121,7 +152,40 @@ class OCRProcessor:
         try:
             # yomitokuで解析
             print("[DEBUG] Starting yomitoku analysis...")
-            results = self.yomitoku_analyzer(img)
+
+            # イベントループが既に実行中かチェック
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+                # 既に実行中の場合は、nest_asyncioを試す
+                print("[DEBUG] Event loop already running, trying nest_asyncio...")
+                try:
+                    import nest_asyncio
+                    nest_asyncio.apply()
+                    print("[DEBUG] nest_asyncio applied successfully")
+                    results = self.yomitoku_analyzer(img)
+                except ImportError:
+                    # nest_asyncioが無い場合は、新しいスレッドで実行
+                    print("[DEBUG] nest_asyncio not available, running in thread...")
+                    import concurrent.futures
+                    import threading
+
+                    def run_in_thread():
+                        # 新しいイベントループを作成
+                        new_loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(new_loop)
+                        try:
+                            return self.yomitoku_analyzer(img)
+                        finally:
+                            new_loop.close()
+
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(run_in_thread)
+                        results = future.result(timeout=60)
+            except RuntimeError:
+                # イベントループが実行中でない場合は通常実行
+                print("[DEBUG] No event loop running, executing normally...")
+                results = self.yomitoku_analyzer(img)
 
             # デバッグ: 結果の構造を確認
             print(f"[DEBUG] yomitoku result type: {type(results)}")
@@ -283,17 +347,19 @@ class OCRProcessor:
             # デバッグ出力
             print(f"OCR: '{text}' (信頼度: {conf:.2f}, Y: {y_center:.2%})")
 
-            # 勝利/敗北/辛勝を検出（上部エリアの大きな文字）
-            if y_center < 0.3:  # 画面上部30%以内
-                if "勝利" in text or text == "勝":
+            # 勝利/敗北/相打ちを検出（画面上部40%以内 - より広範囲で検出）
+            if y_center < 0.4:  # 画面上部40%以内に拡張
+                # 相打ちを最初にチェック（「打」を含むため）
+                if "相打" in text or text == "相":
+                    match_data["result"] = "相打ち"
+                    print(f"  [DETECTED] Draw (from: '{text}')")
+                elif "勝利" in text or text == "勝":
                     match_data["result"] = "勝利"
-                    print(f"  [DETECTED] Victory")
-                elif "敗北" in text or text == "敗":
+                    print(f"  [DETECTED] Victory (from: '{text}')")
+                # 敗北パターンを拡張（部分一致も含む）
+                elif "敗北" in text or text == "敗" or "失敗" in text or text == "失":
                     match_data["result"] = "敗北"
-                    print(f"  [DETECTED] Defeat")
-                elif "辛勝" in text or text == "辛":
-                    match_data["result"] = "辛勝"
-                    print(f"  [DETECTED] Close win")
+                    print(f"  [DETECTED] Defeat (from: '{text}')")
 
             # マップ名を検出
             for map_name in self.map_names:
@@ -349,7 +415,8 @@ class OCRProcessor:
                         break
 
         # サバイバー情報を抽出（画像認識ベース）
-        match_data["survivors"] = self._extract_survivors(sorted_results, img)
+        # 試合結果を渡して位置調整に使用
+        match_data["survivors"] = self._extract_survivors(sorted_results, img, match_data["result"])
 
         # 勝敗が検出されなかった場合はデフォルト値を設定
         if match_data["result"] is None:
@@ -358,19 +425,28 @@ class OCRProcessor:
 
         return match_data
     
-    def _extract_survivors(self, results: List, img: np.ndarray) -> List[Dict]:
+    def _extract_survivors(self, results: List, img: np.ndarray, match_result: str = None) -> List[Dict]:
         """サバイバー4人の情報を抽出（画像認識ベース）"""
         height, width = img.shape[:2]
         survivors = []
-        
+
         # 1. キャラアイコンの位置を検出（画面サイズ対応）
-        icon_positions = self._detect_icon_positions(img)
+        # 試合結果を渡して、敗北時の位置調整を行う
+        icon_positions = self._detect_icon_positions(img, match_result)
 
         print(f"\n[START] Survivor recognition... (Screen size: {width}x{height})")
 
         # 2. 各位置でアイコンを認識
         for position, icon_data in enumerate(icon_positions, 1):
-            print(f"\nSurvivor {position}:")
+            # ハンター位置を判定
+            # 勝利時: Position 1がハンター
+            # 敗北時: Position 5がハンター
+            if match_result == "敗北":
+                is_hunter_position = (position == 5)
+            else:
+                is_hunter_position = (position == 1)
+
+            print(f"\nPosition {position} (Expected: {'Hunter' if is_hunter_position else 'Survivor'}):")
 
             # 座標データを展開
             if len(icon_data) == 4:
@@ -391,7 +467,7 @@ class OCRProcessor:
             }
 
             # アイコンを画像認識
-            char_name = self._match_character_icon(
+            char_name, char_type = self._match_character_icon(
                 img,
                 icon_x,
                 icon_y,
@@ -399,19 +475,36 @@ class OCRProcessor:
                 height=icon_h
             )
 
+            # ハンター位置の特別処理
+            if is_hunter_position:
+                if char_type == "hunter":
+                    print(f"  [INFO] Hunter detected: {char_name} - skipping survivor list")
+                else:
+                    # ハンター位置で認識されたがサバイバーと判定された場合
+                    # ハンターアイコンテンプレートが不足している可能性が高い
+                    print(f"  [INFO] Position {position} recognized as survivor '{char_name}' - assuming this is hunter (icon template missing)")
+                    print(f"  [INFO] Skipping position {position} (hunter position)")
+                # ハンター位置は常にスキップ
+                continue
+
             if char_name:
                 survivor["character"] = char_name
+                survivor["type"] = char_type  # ハンターかサバイバーか
             else:
                 print(f"  [FAILED] Could not recognize character icon (position: x={icon_x}, y={icon_y})")
 
-            # その行のテキストデータを取得
-            row_data = self._get_row_text_data(results, icon_y + icon_h // 2, height)
+            # サバイバーの場合のみデータを取得
+            if char_type == "survivor":
+                # その行のテキストデータを取得
+                row_data = self._get_row_text_data(results, icon_y + icon_h // 2, height)
+                # 数値データを抽出
+                survivor.update(row_data)
 
-            # 数値データを抽出
-            survivor.update(row_data)
-
-            if survivor["character"]:  # キャラが認識できた場合のみ追加
+            # サバイバーのみ追加（ハンターは除外）
+            if survivor["character"] and char_type == "survivor":
                 survivors.append(survivor)
+            elif char_type == "hunter":
+                print(f"  [INFO] Hunter detected: {char_name} - skipping survivor list")
 
         print(f"\n[SUCCESS] Recognized {len(survivors)} survivors\n")
         
@@ -452,13 +545,13 @@ class OCRProcessor:
             return data
 
         # X座標でソート（左から右へ）、X座標が近い場合はY座標でソート（上から下へ）
-        # X座標を5ピクセル単位で丸めることで、縦に並んでいるテキストを正しくソート
+        # X座標を30ピクセル単位で丸めることで、縦に並んでいるテキストを正しくソート
         def sort_key(item):
             idx, bbox, text, conf = item
             x_center = (bbox[0][0] + bbox[2][0]) / 2
             y_center = (bbox[0][1] + bbox[2][1]) / 2
-            # X座標を5ピクセル単位で丸める
-            x_rounded = round(x_center / 5) * 5
+            # X座標を30ピクセル単位で丸める（より広い範囲でグループ化）
+            x_rounded = round(x_center / 30) * 30
             return (x_rounded, y_center)
 
         row_texts.sort(key=sort_key)
@@ -536,23 +629,32 @@ class OCRProcessor:
 
             # 援助/救助ラベルを検出（板より前にチェック）
             elif '援助' in text or '救助' in text:
-                # 次のテキストを確認（row_texts内で次）
-                if i + 1 < len(row_texts):
-                    next_idx, next_bbox, next_text, next_conf = row_texts[i + 1]
+                # このラベルのX座標とY座標を取得
+                label_x = (bbox[0][0] + bbox[2][0]) / 2
+                label_y = (bbox[0][1] + bbox[2][1]) / 2
+
+                # このラベルの下（Y座標が大きく、X座標が近い）にある数値を探す
+                for j in range(i + 1, len(row_texts)):
+                    next_idx, next_bbox, next_text, next_conf = row_texts[j]
+                    next_x = (next_bbox[0][0] + next_bbox[2][0]) / 2
+                    next_y = (next_bbox[0][1] + next_bbox[2][1]) / 2
                     next_clean = next_text.replace(" ", "").replace(",", "").replace(".", "")
 
-                    # 次のテキストがラベルでないことを確認
-                    is_label = ('解読' in next_text or '進捗' in next_text or '進排' in next_text or
-                               '牽制' in next_text or '制' in next_text or 'への' in next_text or
-                               '板' in next_text or '援助' in next_text or '救助' in next_text or '治療' in next_text)
+                    # X座標が近く（±50ピクセル以内）、Y座標がラベルより下にある
+                    if abs(next_x - label_x) < 50 and next_y > label_y:
+                        # 次のテキストがラベルでないことを確認
+                        is_label = ('解読' in next_text or '進捗' in next_text or '進排' in next_text or
+                                   '牽制' in next_text or '制' in next_text or 'への' in next_text or
+                                   '板' in next_text or '援助' in next_text or '救助' in next_text or '治療' in next_text)
 
-                    if not is_label:
-                        # 単独の数字を探す
-                        number_match = re.match(r'^(\d{1,2})$', next_clean)
-                        if number_match:
-                            value = int(number_match.group(1))
-                            data["rescues"] = value
-                            print(f"  [RESCUE] {value} (from: '{next_text}')")
+                        if not is_label:
+                            # 単独の数字を探す
+                            number_match = re.match(r'^(\d{1,2})$', next_clean)
+                            if number_match:
+                                value = int(number_match.group(1))
+                                data["rescues"] = value
+                                print(f"  [RESCUE] {value} (from: '{next_text}' at X:{next_x:.1f}, Y:{next_y:.1f})")
+                                break
 
             # 板ラベルを検出（「板命中」全体をチェック）
             elif '板' in text and '命中' in text:
@@ -576,29 +678,39 @@ class OCRProcessor:
 
             # 治療ラベルを検出
             elif '治療' in text:
-                # 次のテキストを確認（row_texts内で次）
-                if i + 1 < len(row_texts):
-                    next_idx, next_bbox, next_text, next_conf = row_texts[i + 1]
+                # このラベルのX座標とY座標を取得
+                label_x = (bbox[0][0] + bbox[2][0]) / 2
+                label_y = (bbox[0][1] + bbox[2][1]) / 2
+
+                # このラベルの下（Y座標が大きく、X座標が近い）にある数値を探す
+                for j in range(i + 1, len(row_texts)):
+                    next_idx, next_bbox, next_text, next_conf = row_texts[j]
+                    next_x = (next_bbox[0][0] + next_bbox[2][0]) / 2
+                    next_y = (next_bbox[0][1] + next_bbox[2][1]) / 2
                     next_clean = next_text.replace(" ", "").replace(",", "").replace(".", "")
 
-                    # 次のテキストがラベルでないことを確認
-                    is_label = ('解読' in next_text or '進捗' in next_text or '進排' in next_text or
-                               '牽制' in next_text or '制' in next_text or 'への' in next_text or
-                               '板' in next_text or '援助' in next_text or '救助' in next_text or '治療' in next_text)
+                    # X座標が近く（±50ピクセル以内）、Y座標がラベルより下にある
+                    if abs(next_x - label_x) < 50 and next_y > label_y:
+                        # 次のテキストがラベルでないことを確認
+                        is_label = ('解読' in next_text or '進捗' in next_text or '進排' in next_text or
+                                   '牽制' in next_text or '制' in next_text or 'への' in next_text or
+                                   '板' in next_text or '援助' in next_text or '救助' in next_text or '治療' in next_text)
 
-                    if not is_label:
-                        # 単独の数字を探す
-                        number_match = re.match(r'^(\d{1,2})$', next_clean)
-                        if number_match:
-                            value = int(number_match.group(1))
-                            data["heals"] = value
-                            print(f"  [HEAL] {value} (from: '{next_text}')")
+                        if not is_label:
+                            # 単独の数字を探す
+                            number_match = re.match(r'^(\d{1,2})$', next_clean)
+                            if number_match:
+                                value = int(number_match.group(1))
+                                data["heals"] = value
+                                print(f"  [HEAL] {value} (from: '{next_text}' at X:{next_x:.1f}, Y:{next_y:.1f})")
+                                break
 
         return data
     
-    def _match_character_icon(self, img: np.ndarray, x: int, y: int, width: int = 100, height: int = 100) -> Optional[str]:
+    def _match_character_icon(self, img: np.ndarray, x: int, y: int, width: int = 100, height: int = 100) -> Tuple[Optional[str], Optional[str]]:
         """
         指定座標周辺のキャラアイコンを画像マッチングで識別
+        ハンターとサバイバーの両方をチェックして、最もマッチするものを返す
 
         Args:
             img: 元画像
@@ -606,11 +718,11 @@ class OCRProcessor:
             width, height: アイコン領域のサイズ
 
         Returns:
-            キャラクター名（見つからない場合はNone）
+            (キャラクター名, タイプ): タイプは"hunter"または"survivor"
         """
-        if not self.icon_templates:
+        if not self.survivor_templates and not self.hunter_templates:
             print("[WARNING] Icon templates not loaded")
-            return None
+            return None, None
 
         # アイコン領域を切り出し（周辺のパディングを含める）
         padding = int(width * 0.1)  # 10%のパディング
@@ -622,12 +734,13 @@ class OCRProcessor:
         icon_region = img[y1:y2, x1:x2]
 
         if icon_region.size == 0:
-            return None
+            return None, None
 
-        # 各キャラクターのベストスコアを記録
+        # 各キャラクターのベストスコアを記録 (キャラ名: (スコア, タイプ))
         char_scores = {}
 
-        for char_name, template_data in self.icon_templates.items():
+        # サバイバーをチェック
+        for char_name, template_data in self.survivor_templates.items():
             max_score_for_char = 0.0
 
             # より多くのサイズで試す
@@ -661,74 +774,104 @@ class OCRProcessor:
                 except cv2.error:
                     continue
 
-            char_scores[char_name] = max_score_for_char
+            char_scores[char_name] = (max_score_for_char, "survivor")
+
+        # ハンターをチェック
+        for char_name, template_data in self.hunter_templates.items():
+            max_score_for_char = 0.0
+
+            # より多くのサイズで試す
+            sizes = template_data['sizes']
+            original = template_data['original']
+
+            # 追加のスケールも試す（元のサイズに基づく）
+            orig_h, orig_w = original.shape[:2]
+            scales = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]
+            extra_sizes = []
+            for scale in scales:
+                new_size = (int(orig_w * scale), int(orig_h * scale))
+                if 30 <= new_size[0] <= 150 and 30 <= new_size[1] <= 150:
+                    extra_sizes.append(cv2.resize(original, new_size))
+
+            all_templates = sizes + extra_sizes
+
+            for template in all_templates:
+                # テンプレートがアイコン領域より大きい場合はスキップ
+                if template.shape[0] > icon_region.shape[0] or template.shape[1] > icon_region.shape[1]:
+                    continue
+
+                # TM_CCOEFF_NORMEDが最も信頼性が高い
+                try:
+                    result = cv2.matchTemplate(icon_region, template, cv2.TM_CCOEFF_NORMED)
+                    _, max_val, _, _ = cv2.minMaxLoc(result)
+
+                    if max_val > max_score_for_char:
+                        max_score_for_char = max_val
+
+                except cv2.error:
+                    continue
+
+            char_scores[char_name] = (max_score_for_char, "hunter")
 
         # スコアが最も高いキャラクターを選択
         if not char_scores:
-            return None
+            return None, None
 
-        # スコアでソート
-        sorted_scores = sorted(char_scores.items(), key=lambda x: x[1], reverse=True)
+        # スコアでソート (スコアの数値でソート)
+        sorted_scores = sorted(char_scores.items(), key=lambda x: x[1][0], reverse=True)
 
-        best_char, best_score = sorted_scores[0]
-
-        # デバッグ: トップ5を表示
-        print(f"  [MATCHING] Top 5 scores:")
-        for char, score in sorted_scores[:5]:
-            marker = "*" if char == best_char else " "
-            print(f"    {marker} {char}: {score:.2%}")
+        best_char, (best_score, char_type) = sorted_scores[0]
 
         # 閾値チェック（最低40%以上）
         if best_score < 0.40:
             print(f"  [FAILED] Score below threshold: {best_score:.2%} < 40%")
-            return None
+            return None, None
 
         # 2位との差が小さすぎる場合は信頼性が低いと判断
         if len(sorted_scores) > 1:
-            second_score = sorted_scores[1][1]
+            second_score = sorted_scores[1][1][0]
             score_diff = best_score - second_score
             if score_diff < 0.05:  # 5%未満の差
                 print(f"  [WARNING] Small difference from 2nd place: {score_diff:.2%} (1st: {best_score:.2%}, 2nd: {second_score:.2%})")
                 # それでも採用するが警告を出す
 
-        print(f"  [RECOGNIZED] {best_char} (confidence: {best_score:.2%})")
-        return best_char
+        print(f"  [RECOGNIZED] [{char_type.upper()}] {best_char} (confidence: {best_score:.2%})")
+        return best_char, char_type
     
-    def _detect_icon_positions(self, img: np.ndarray) -> List[Tuple[int, int]]:
+    def _detect_icon_positions(self, img: np.ndarray, match_result: str = None) -> List[Tuple[int, int]]:
         """
         画像内のキャラアイコンの位置を検出（画面サイズ対応）
-        
+
+        勝利時: ハンター、サバイバー1、サバイバー2、サバイバー3、サバイバー4
+        敗北時: サバイバー1、サバイバー2、サバイバー3、サバイバー4、ハンター
+
+        Args:
+            img: 入力画像
+            match_result: 試合結果（敗北時はハンターが最後に表示）
+
         Returns:
-            [(x, y, width, height), ...] のリスト
+            [(x, y, width, height), ...] のリスト（5箇所）
         """
         height, width = img.shape[:2]
-        
+
         # 相対座標から実座標に変換
         icon_size = int(width * self.layout['icon_size_ratio'])
         x_start = int(width * self.layout['icon_x_ratio'][0])
-        x_end = int(width * self.layout['icon_x_ratio'][1])
-        
-        y_start = int(height * self.layout['survivor_y_start'])
-        y_end = int(height * self.layout['survivor_y_end'])
-        
-        # 自動検出を試みる
-        if self.layout.get('use_auto_detect', False):
-            detected = self._auto_detect_icons(img, x_start, x_end, y_start, y_end)
-            if detected and len(detected) >= 2:  # 2人以上検出できたら採用
-                print(f"[AUTO-DETECT] Detected {len(detected)} icon positions")
-                return detected
-            else:
-                print("[WARNING] Auto-detection failed, using estimated positions")
-        
-        # フォールバック: 等間隔で推定
-        positions = []
-        row_height = (y_end - y_start) / 4
 
         # Y座標オフセットを取得（デフォルトは0）
         y_offset = int(height * self.layout.get('icon_y_offset_ratio', 0.0))
 
-        for i in range(4):
-            y = int(y_start + i * row_height + y_offset)
+        # 位置は常に同じ5箇所
+        y_positions_ratio = [0.29, 0.42, 0.555, 0.69, 0.825]
+
+        if match_result == "敗北":
+            print(f"[POSITION] Detecting 5 positions (defeat: survivors 1-4, then hunter)")
+        else:
+            print(f"[POSITION] Detecting 5 positions (victory: hunter, then survivors 1-4)")
+
+        positions = []
+        for y_ratio in y_positions_ratio:
+            y = int(height * y_ratio + y_offset)
             x = x_start
             positions.append((x, y, icon_size, icon_size))
 
