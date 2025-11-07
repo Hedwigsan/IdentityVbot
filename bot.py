@@ -12,7 +12,7 @@ load_dotenv()
 
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix='!', intents=intents)
+bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
 db = Database()
 ocr = OCRProcessor()
@@ -101,7 +101,20 @@ async def record_match(ctx, hunter: str = None, trait: str = None, persona: str 
             color=discord.Color.green(),
             timestamp=datetime.now()
         )
-        
+
+        # 試合日時
+        if match_data.get("played_at"):
+            try:
+                from datetime import datetime as dt
+                played_dt = dt.fromisoformat(match_data["played_at"])
+                embed.add_field(
+                    name="📅 試合日時",
+                    value=played_dt.strftime("%m月%d日 %H:%M"),
+                    inline=True
+                )
+            except:
+                pass
+
         # 試合結果
         result_emoji = "🏆" if match_data.get("result") == "勝利" else "💀"
         embed.add_field(
@@ -109,14 +122,14 @@ async def record_match(ctx, hunter: str = None, trait: str = None, persona: str 
             value=match_data.get("result", "不明"),
             inline=True
         )
-        
+
         # マップ
         embed.add_field(
             name="🗺️ マップ",
             value=match_data.get("map_name", "不明"),
             inline=True
         )
-        
+
         # 時間
         embed.add_field(
             name="⏱️ 使用時間",
@@ -145,11 +158,17 @@ async def record_match(ctx, hunter: str = None, trait: str = None, persona: str 
         if survivors:
             survivor_text = ""
             for i, s in enumerate(survivors, 1):
-                char = s.get("character", "不明")
-                kite = s.get("kite_time", "-")
-                decode = s.get("decode_progress", "-")
-                survivor_text += f"`{i}.` **{char}** | 牽制: {kite} | 解読: {decode}\n"
-            
+                char = s.get("character") or "不明"
+                kite = s.get("kite_time") or "-"
+                decode = s.get("decode_progress") or "-"
+                board = s.get("board_hits") if s.get("board_hits") else "-"
+                rescue = s.get("rescues") if s.get("rescues") else "-"
+                heal = s.get("heals") if s.get("heals") else "-"
+
+                survivor_text += f"`{i}.` **{char}**\n"
+                survivor_text += f"   牽制: {kite} | 解読: {decode}\n"
+                survivor_text += f"   板: {board} | 救助: {rescue} | 治療: {heal}\n"
+
             embed.add_field(
                 name=f"👥 サバイバー ({len(survivors)}人検出)",
                 value=survivor_text or "検出できませんでした",
@@ -305,16 +324,26 @@ async def show_history(ctx, limit: int = 5):
     
     for i, match in enumerate(matches, 1):
         result_emoji = "🏆" if match.get("result") == "勝利" else "💀"
-        
+
         survivors = match.get("survivors", [])
         survivor_names = [s.get("character_name") for s in survivors if s.get("character_name")]
-        
-        field_value = f"**{match.get('result', '不明')}** | {match.get('map_name', '不明')}\n"
+
+        # 試合日時を表示
+        field_value = ""
+        if match.get("played_at"):
+            try:
+                from datetime import datetime as dt
+                played_dt = dt.fromisoformat(match["played_at"])
+                field_value += f"📅 {played_dt.strftime('%m/%d %H:%M')}\n"
+            except:
+                pass
+
+        field_value += f"**{match.get('result', '不明')}** | {match.get('map_name', '不明')}\n"
         if match.get("hunter_character"):
             field_value += f"ハンター: {match.get('hunter_character')}\n"
         if survivor_names:
             field_value += f"相手: {', '.join(survivor_names[:2])}..."
-        
+
         embed.add_field(
             name=f"{result_emoji} 試合 {i}",
             value=field_value,

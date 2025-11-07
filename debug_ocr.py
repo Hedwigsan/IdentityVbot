@@ -60,21 +60,28 @@ def debug_ocr(image_path: str):
     # 3. アイコン位置を検出して描画
     icon_positions = ocr._detect_icon_positions(img)
     print(f"\n🎯 検出されたアイコン位置: {len(icon_positions)}個")
-    
+
     for i, icon_data in enumerate(icon_positions, 1):
         if len(icon_data) == 4:
             x, y, w, h = icon_data
         else:
             x, y = icon_data
             w = h = int(width * ocr.layout['icon_size_ratio'])
-        
+
+        # キャラクター認識を試行
+        char_name = ocr._match_character_icon(img, x, y, w, h)
+
         # アイコン領域を描画
-        cv2.rectangle(debug_img, (x, y), (x + w, y + h), (0, 255, 0), 3)
-        cv2.putText(debug_img, f"Icon {i}",
+        color = (0, 255, 0) if char_name else (0, 0, 255)  # 認識成功=緑、失敗=赤
+        cv2.rectangle(debug_img, (x, y), (x + w, y + h), color, 3)
+
+        # キャラクター名を表示
+        label = char_name if char_name else f"Unknown {i}"
+        cv2.putText(debug_img, label,
                    (x, y - 5),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-        
-        print(f"  アイコン {i}: x={x}, y={y}, size={w}x{h}")
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+        print(f"  アイコン {i}: x={x}, y={y}, size={w}x{h} → {char_name if char_name else '認識失敗'}")
     
     # 4. OCR結果を描画
     print("\n📝 OCR実行中...")

@@ -11,11 +11,12 @@ class Database:
     
     def save_match(self, user_id: str, match_data: Dict) -> Dict:
         """試合データを保存（ハンター情報 + サバイバー4人）"""
-        
+
         # 1. 試合の基本情報を保存
         match_record = {
             "user_id": user_id,
             "match_date": datetime.now().isoformat(),
+            "played_at": match_data.get("played_at"),  # 実際の試合日時
             "result": match_data.get("result"),
             "match_duration": match_data.get("duration"),
             "hunter_character": match_data.get("hunter_character"),
