@@ -416,7 +416,13 @@ class OCRProcessor:
 
         # サバイバー情報を抽出（画像認識ベース）
         # 試合結果を渡して位置調整に使用
-        match_data["survivors"] = self._extract_survivors(sorted_results, img, match_data["result"])
+        survivors, detected_hunter = self._extract_survivors(sorted_results, img, match_data["result"])
+        match_data["survivors"] = survivors
+
+        # ハンター情報を設定
+        if detected_hunter:
+            match_data["hunter_character"] = detected_hunter
+            print(f"[AUTO-DETECTED] Hunter: {detected_hunter}")
 
         # 勝敗が検出されなかった場合はデフォルト値を設定
         if match_data["result"] is None:
@@ -425,10 +431,15 @@ class OCRProcessor:
 
         return match_data
     
-    def _extract_survivors(self, results: List, img: np.ndarray, match_result: str = None) -> List[Dict]:
-        """サバイバー4人の情報を抽出（画像認識ベース）"""
+    def _extract_survivors(self, results: List, img: np.ndarray, match_result: str = None) -> Tuple[List[Dict], Optional[str]]:
+        """サバイバー4人の情報とハンター情報を抽出（画像認識ベース）
+
+        Returns:
+            Tuple[List[Dict], Optional[str]]: (サバイバーリスト, ハンター名)
+        """
         height, width = img.shape[:2]
         survivors = []
+        detected_hunter = None
 
         # 1. キャラアイコンの位置を検出（画面サイズ対応）
         # 試合結果を渡して、敗北時の位置調整を行う
@@ -479,6 +490,7 @@ class OCRProcessor:
             if is_hunter_position:
                 if char_type == "hunter":
                     print(f"  [INFO] Hunter detected: {char_name} - skipping survivor list")
+                    detected_hunter = char_name
                 else:
                     # ハンター位置で認識されたがサバイバーと判定された場合
                     # ハンターアイコンテンプレートが不足している可能性が高い
@@ -507,8 +519,10 @@ class OCRProcessor:
                 print(f"  [INFO] Hunter detected: {char_name} - skipping survivor list")
 
         print(f"\n[SUCCESS] Recognized {len(survivors)} survivors\n")
-        
-        return survivors
+        if detected_hunter:
+            print(f"[SUCCESS] Hunter detected: {detected_hunter}\n")
+
+        return survivors, detected_hunter
     
     def _get_row_text_data(self, results: List, target_y: int, img_height: int) -> Dict:
         """

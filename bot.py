@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
+from discord.ui import Select, View, Modal, TextInput
 import os
 from dotenv import load_dotenv
 from database import Database
@@ -45,56 +46,33 @@ TRAITS = [
     "リッスン", "異常", "興奮", "巡視者", "瞬間移動", "監視者", "神出鬼没", "移形"
 ]
 
-@bot.event
-async def on_ready():
-    print(f'✅ {bot.user} がログインしました！')
-    print(f'Bot ID: {bot.user.id}')
-    print('---------------------------')
+# インタラクティブUI用のクラス
+class PersonaModal(Modal, title="人格を入力"):
+    """人格入力用のモーダル"""
+    persona_input = TextInput(
+        label="人格",
+        placeholder="例: 中治り、左右、破壊欲 など",
+        required=False,
+        max_length=50
+    )
 
-@bot.command(name='record', aliases=['r'])
-async def record_match(ctx, hunter: str = None, trait: str = None, persona: str = None, *banned):
-    """
-    試合結果を記録
-    
-    使い方:
-    !record [ハンター] [特質] [人格] [Ban1] [Ban2]...
-    
-    例:
-    !record 道化師 異常 "中治り" 機械技師 傭兵
-    
-    ※画像を添付してください
-    """
-    if not ctx.message.attachments:
-        await ctx.send(
-            "❌ **画像を添付してください！**\n\n"
-            "**使い方:**\n"
-            "`!record [ハンター] [特質] [人格] [Ban1] [Ban2]...`\n\n"
-            "**例:**\n"
-            "`!record 道化師 異常 中治り 機械技師 傭兵` (画像添付)\n"
-            "または\n"
-            "`!record` (画像添付のみ、後で追加情報入力)"
-        )
-        return
-    
-    processing_msg = await ctx.send("🔄 画像を解析中...")
-    
-    try:
-        # 画像ダウンロード
-        attachment = ctx.message.attachments[0]
-        image_bytes = await attachment.read()
-        
-        # OCR処理
-        match_data = ocr.process_image(image_bytes)
-        
-        # 追加情報を設定
-        match_data["hunter_character"] = hunter
-        match_data["trait_used"] = trait
-        match_data["persona"] = persona
-        match_data["banned_characters"] = list(banned) if banned else []
-        
+    def __init__(self, match_data, trait, banned_chars):
+        super().__init__()
+        self.match_data = match_data
+        self.trait = trait
+        self.banned_chars = banned_chars
+
+    async def on_submit(self, interaction: discord.Interaction):
+        persona = self.persona_input.value.strip() if self.persona_input.value else None
+
+        # データを保存
+        self.match_data["trait_used"] = self.trait
+        self.match_data["persona"] = persona
+        self.match_data["banned_characters"] = self.banned_chars
+
         # データベースに保存
-        saved = db.save_match(str(ctx.author.id), match_data)
-        
+        saved = db.save_match(str(interaction.user.id), self.match_data)
+
         # 結果表示
         embed = discord.Embed(
             title="✅ 試合を記録しました",
@@ -103,10 +81,10 @@ async def record_match(ctx, hunter: str = None, trait: str = None, persona: str 
         )
 
         # 試合日時
-        if match_data.get("played_at"):
+        if self.match_data.get("played_at"):
             try:
                 from datetime import datetime as dt
-                played_dt = dt.fromisoformat(match_data["played_at"])
+                played_dt = dt.fromisoformat(self.match_data["played_at"])
                 embed.add_field(
                     name="📅 試合日時",
                     value=played_dt.strftime("%m月%d日 %H:%M"),
@@ -116,50 +94,50 @@ async def record_match(ctx, hunter: str = None, trait: str = None, persona: str 
                 pass
 
         # 試合結果
-        result_emoji = "🏆" if match_data.get("result") == "勝利" else "💀"
+        result_emoji = "🏆" if self.match_data.get("result") == "勝利" else "💀"
         embed.add_field(
             name=f"{result_emoji} 試合結果",
-            value=match_data.get("result", "不明"),
+            value=self.match_data.get("result", "不明"),
             inline=True
         )
 
         # マップ
         embed.add_field(
             name="🗺️ マップ",
-            value=match_data.get("map_name", "不明"),
+            value=self.match_data.get("map_name", "不明"),
             inline=True
         )
 
         # 時間
         embed.add_field(
             name="⏱️ 使用時間",
-            value=match_data.get("duration", "不明"),
+            value=self.match_data.get("duration", "不明"),
             inline=True
         )
-        
+
         # ハンター情報
-        if hunter:
-            embed.add_field(name="🔪 ハンター", value=hunter, inline=True)
-        if trait:
-            embed.add_field(name="⚡ 特質", value=trait, inline=True)
+        hunter_name = self.match_data.get("hunter_character")
+        if hunter_name:
+            embed.add_field(name="🔪 ハンター (自動検出)", value=hunter_name, inline=True)
+        if self.trait:
+            embed.add_field(name="⚡ 特質", value=self.trait, inline=True)
         if persona:
             embed.add_field(name="🎭 人格", value=persona, inline=True)
-        
+
         # Ban情報
-        if banned:
+        if self.banned_chars:
             embed.add_field(
                 name="🚫 Banキャラ",
-                value=", ".join(banned),
+                value=", ".join(self.banned_chars),
                 inline=False
             )
-        
+
         # サバイバー情報
-        survivors = match_data.get("survivors", [])
+        survivors = self.match_data.get("survivors", [])
         if survivors:
             survivor_text = ""
             for i, s in enumerate(survivors, 1):
                 char = s.get("character") or "不明"
-                # Noneの場合は"-"に変換
                 kite = s.get("kite_time") if s.get("kite_time") is not None else "-"
                 decode = s.get("decode_progress") if s.get("decode_progress") is not None else "-"
                 board = s.get("board_hits") if s.get("board_hits") is not None else "-"
@@ -175,11 +153,219 @@ async def record_match(ctx, hunter: str = None, trait: str = None, persona: str 
                 value=survivor_text or "検出できませんでした",
                 inline=False
             )
-        
-        embed.set_footer(text=f"記録者: {ctx.author.display_name}")
-        
-        await processing_msg.edit(content=None, embed=embed)
-        
+
+        embed.set_footer(text=f"記録者: {interaction.user.display_name}")
+
+        await interaction.response.send_message(embed=embed)
+
+
+class SelectionView(View):
+    """特質とBanキャラ選択用のView（ボタンなし）"""
+    def __init__(self, message=None):
+        super().__init__(timeout=300)  # 5分のタイムアウト
+        self.trait = None
+        self.ban_page1 = []
+        self.ban_page2 = []
+        self.message = message  # メッセージ参照を保持
+        self.ocr_complete = False
+
+        # 特質選択メニュー
+        trait_select = Select(
+            placeholder="⚡ 特質を選択してください",
+            options=[discord.SelectOption(label=trait, value=trait) for trait in TRAITS],
+            custom_id="trait_select",
+            row=0
+        )
+        trait_select.callback = self.trait_callback
+        self.add_item(trait_select)
+
+        # Ban - 前半 (医師〜墓守) - 最大3人選択
+        ban_p1_select = Select(
+            placeholder="🚫 Banキャラ - 前半 (医師〜墓守)",
+            options=[discord.SelectOption(label=char, value=char) for char in SURVIVOR_CHARACTERS[:25]],
+            custom_id="ban_p1_select",
+            min_values=0,
+            max_values=3,
+            row=1
+        )
+        ban_p1_select.callback = self.ban_page1_callback
+        self.add_item(ban_p1_select)
+
+        # Ban - 後半 (「囚人」〜幸運児) - 最大3人選択
+        ban_p2_select = Select(
+            placeholder="🚫 Banキャラ - 後半 (「囚人」〜幸運児)",
+            options=[discord.SelectOption(label=char, value=char) for char in SURVIVOR_CHARACTERS[25:]],
+            custom_id="ban_p2_select",
+            min_values=0,
+            max_values=3,
+            row=2
+        )
+        ban_p2_select.callback = self.ban_page2_callback
+        self.add_item(ban_p2_select)
+
+    def get_status_text(self):
+        """現在の選択状態を表示するテキストを生成"""
+        status = "📝 **特質とBanキャラを選択してください**\n\n"
+
+        if self.ocr_complete:
+            status += "✅ 画像解析完了\n\n"
+        else:
+            status += "🔄 画像を解析中...\n解析完了を待たずに、先に選択できます！\n\n"
+
+        # 現在の選択状態を表示
+        if self.trait:
+            status += f"⚡ 特質: **{self.trait}**\n"
+
+        all_bans = []
+        if self.ban_page1:
+            all_bans.extend(self.ban_page1)
+        if self.ban_page2:
+            all_bans.extend(self.ban_page2)
+
+        if all_bans:
+            status += f"🚫 Ban: **{', '.join(all_bans[:3])}**"
+
+        return status
+
+    async def update_status(self):
+        """選択状態を反映してメッセージを更新"""
+        if self.message:
+            try:
+                await self.message.edit(content=self.get_status_text(), view=self)
+            except:
+                pass
+
+    async def trait_callback(self, interaction: discord.Interaction):
+        self.trait = interaction.data["values"][0]
+        try:
+            await interaction.response.defer()
+        except discord.errors.NotFound:
+            pass
+        await self.update_status()
+
+    async def ban_page1_callback(self, interaction: discord.Interaction):
+        self.ban_page1 = interaction.data["values"]
+        try:
+            await interaction.response.defer()
+        except discord.errors.NotFound:
+            pass
+        await self.update_status()
+
+    async def ban_page2_callback(self, interaction: discord.Interaction):
+        self.ban_page2 = interaction.data["values"]
+        try:
+            await interaction.response.defer()
+        except discord.errors.NotFound:
+            pass
+        await self.update_status()
+
+
+class ConfirmButtonView(View):
+    """確定ボタン専用のView（別メッセージ用）"""
+    def __init__(self, match_data, selection_view):
+        super().__init__(timeout=300)
+        self.match_data = match_data
+        self.selection_view = selection_view
+
+    @discord.ui.button(label="確定して人格を入力", style=discord.ButtonStyle.primary, row=0)
+    async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Ban選択を統合
+        banned_chars = []
+
+        # 前半と後半のBanを統合
+        if self.selection_view.ban_page1:
+            banned_chars.extend(self.selection_view.ban_page1)
+        if self.selection_view.ban_page2:
+            banned_chars.extend(self.selection_view.ban_page2)
+
+        # 重複削除
+        unique_bans = []
+        for char in banned_chars:
+            if char not in unique_bans:
+                unique_bans.append(char)
+
+        # 3人までに制限
+        if len(unique_bans) > 3:
+            unique_bans = unique_bans[:3]
+
+        # 人格入力モーダルを表示
+        modal = PersonaModal(self.match_data, self.selection_view.trait, unique_bans)
+        await interaction.response.send_modal(modal)
+        self.stop()
+        self.selection_view.stop()
+
+
+@bot.event
+async def on_ready():
+    print(f'✅ {bot.user} がログインしました！')
+    print(f'Bot ID: {bot.user.id}')
+    print('---------------------------')
+
+@bot.command(name='record', aliases=['r'])
+async def record_match(ctx):
+    """
+    試合結果を記録
+
+    使い方:
+    !record (画像を添付)
+
+    ※画像を添付してください
+    ※ハンターは自動検出されます
+    ※特質・Ban・人格は画像解析中に選択できます
+    """
+    if not ctx.message.attachments:
+        await ctx.send(
+            "❌ **画像を添付してください！**\n\n"
+            "**使い方:**\n"
+            "`!record` (画像添付)\n\n"
+            "画像解析中に特質・Ban・人格を選択できます"
+        )
+        return
+
+    # 先に選択UIを表示
+    selection_view = SelectionView()
+    selection_msg = await ctx.send(
+        selection_view.get_status_text(),
+        view=selection_view
+    )
+    # メッセージ参照を設定
+    selection_view.message = selection_msg
+
+    processing_msg = await ctx.send("🔄 画像を解析中...")
+
+    try:
+        # 画像ダウンロード
+        attachment = ctx.message.attachments[0]
+        image_bytes = await attachment.read()
+
+        # OCR処理
+        match_data = ocr.process_image(image_bytes)
+
+        # OCR結果を表示
+        hunter_name = match_data.get("hunter_character", "不明")
+        result = match_data.get("result", "不明")
+        map_name = match_data.get("map_name", "不明")
+        duration = match_data.get("duration", "不明")
+
+        await processing_msg.edit(
+            content=f"✅ **画像解析完了！**\n\n"
+                    f"📊 結果: **{result}**\n"
+                    f"🗺️ マップ: **{map_name}**\n"
+                    f"⏱️ 使用時間: **{duration}**\n"
+                    f"🔪 ハンター: **{hunter_name}** (自動検出)"
+        )
+
+        # 選択メッセージを更新（OCR完了状態に）
+        selection_view.ocr_complete = True
+        await selection_view.update_status()
+
+        # 確定ボタンを別メッセージで送信
+        button_view = ConfirmButtonView(match_data, selection_view)
+        await ctx.send(
+            "⬇️ **選択が完了したら下のボタンを押してください**",
+            view=button_view
+        )
+
     except Exception as e:
         await processing_msg.edit(
             content=f"❌ **エラーが発生しました**\n```{str(e)}```"
@@ -364,7 +550,7 @@ async def show_help(ctx):
     
     commands_list = [
         ("📸 記録コマンド", ""),
-        ("!record [ハンター] [特質] [人格] [Ban...]", "試合結果を記録（画像添付必須）"),
+        ("!record", "試合結果を記録（画像添付必須）\n※ハンターは自動検出\n※特質・Ban・人格は選択メニューから入力"),
         ("", ""),
         ("📊 統計コマンド", ""),
         ("!stats", "全体統計を表示"),
