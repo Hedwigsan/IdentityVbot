@@ -15,8 +15,14 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
+# スラッシュコマンド用のツリー
+tree = bot.tree
+
 db = Database()
 ocr = OCRProcessor()
+
+# 画像アップロード待機用のグローバル辞書 {user_id: {"waiting": bool, "channel_id": int}}
+waiting_for_images = {}
 
 # 第五人格のゲームデータ
 SURVIVOR_CHARACTERS = [
@@ -61,11 +67,12 @@ class PersonaModal(Modal, title="人格を入力"):
         max_length=50
     )
 
-    def __init__(self, match_data_list, trait, banned_chars):
+    def __init__(self, match_data_list, trait, banned_chars, ephemeral: bool = False):
         super().__init__()
         self.match_data_list = match_data_list if isinstance(match_data_list, list) else [match_data_list]
         self.trait = trait
         self.banned_chars = banned_chars
+        self.ephemeral = ephemeral  # Ephemeralフラグ
 
     async def on_submit(self, interaction: discord.Interaction):
         persona = self.persona_input.value.strip() if self.persona_input.value else None
@@ -169,7 +176,7 @@ class PersonaModal(Modal, title="人格を入力"):
 
         embed.set_footer(text=f"記録者: {interaction.user.display_name}")
 
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=self.ephemeral)
 
 
 class SelectionView(View):
@@ -275,10 +282,11 @@ class SelectionView(View):
 
 class ConfirmButtonView(View):
     """確定ボタン専用のView（別メッセージ用）"""
-    def __init__(self, match_data_list, selection_view):
+    def __init__(self, match_data_list, selection_view, ephemeral: bool = False):
         super().__init__(timeout=300)
         self.match_data_list = match_data_list if isinstance(match_data_list, list) else [match_data_list]
         self.selection_view = selection_view
+        self.ephemeral = ephemeral  # Ephemeralフラグ
 
     @discord.ui.button(label="確定して人格を入力", style=discord.ButtonStyle.primary, row=0)
     async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -301,8 +309,8 @@ class ConfirmButtonView(View):
         if len(unique_bans) > 3:
             unique_bans = unique_bans[:3]
 
-        # 人格入力モーダルを表示（複数画像データを渡す）
-        modal = PersonaModal(self.match_data_list, self.selection_view.trait, unique_bans)
+        # 人格入力モーダルを表示（複数画像データを渡す、ephemeralフラグも渡す）
+        modal = PersonaModal(self.match_data_list, self.selection_view.trait, unique_bans, ephemeral=self.ephemeral)
         await interaction.response.send_modal(modal)
         self.stop()
         self.selection_view.stop()
@@ -310,11 +318,12 @@ class ConfirmButtonView(View):
 
 class LimitButtonView(View):
     """件数選択ボタン用の汎用View"""
-    def __init__(self, user_id: str, stat_type: str, hunter: str = None):
+    def __init__(self, user_id: str, stat_type: str, hunter: str = None, ephemeral: bool = False):
         super().__init__(timeout=300)
         self.user_id = user_id
         self.stat_type = stat_type  # "survivor", "kite", "map", "survivor_winrate"
         self.hunter = hunter
+        self.ephemeral = ephemeral  # Ephemeralフラグ
 
     @discord.ui.button(label="📊 最新10戦", style=discord.ButtonStyle.secondary, row=0)
     async def show_10_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
@@ -500,11 +509,12 @@ class WinrateSortView(View):
 
 class HunterSelectView(View):
     """ハンター選択用のView（kite_stats, map_stats用）"""
-    def __init__(self, user_id: str, stat_type: str):
+    def __init__(self, user_id: str, stat_type: str, ephemeral: bool = False):
         super().__init__(timeout=300)
         self.user_id = user_id
         self.stat_type = stat_type  # "kite" or "map"
         self.selected_hunter = None
+        self.ephemeral = ephemeral  # Ephemeralフラグ
 
         # ハンター選択 - 前半 (row 0)
         hunter_p1_options = [discord.SelectOption(label="全て", value="all", default=True)]
@@ -541,20 +551,22 @@ class HunterSelectView(View):
         await interaction.response.defer()
 
         # 件数選択用のViewを表示
-        limit_view = LimitButtonView(self.user_id, self.stat_type, self.selected_hunter)
+        limit_view = LimitButtonView(self.user_id, self.stat_type, self.selected_hunter, ephemeral=self.ephemeral)
         hunter_text = f"**{self.selected_hunter}**" if self.selected_hunter else "**全ハンター**"
         await interaction.followup.send(
             f"ハンター: {hunter_text}\n\n集計する試合数を選択してください:",
-            view=limit_view
+            view=limit_view,
+            ephemeral=self.ephemeral
         )
         self.stop()
 
 
 class DataFilterView(View):
     """データフィルタリング用のView"""
-    def __init__(self, user_id: str):
+    def __init__(self, user_id: str, ephemeral: bool = False):
         super().__init__(timeout=300)
         self.user_id = user_id
+        self.ephemeral = ephemeral  # Ephemeralフラグ
         self.filters = {
             "hunter": None,
             "trait": None,
@@ -705,6 +717,7 @@ class DataFilterView(View):
             color=discord.Color.blue()
         )
 
+        
         # 戦績を "29勝12分15敗/56戦" 形式で表示
         record_text = f"{wins}勝{draws}分{losses}敗/{total}戦"
 
@@ -741,6 +754,13 @@ async def on_ready():
     print(f'✅ {bot.user} がログインしました！')
     print(f'Bot ID: {bot.user.id}')
     print('---------------------------')
+
+    # スラッシュコマンドを同期
+    try:
+        synced = await tree.sync()
+        print(f'📡 スラッシュコマンドを同期しました: {len(synced)}個')
+    except Exception as e:
+        print(f'❌ スラッシュコマンドの同期に失敗: {e}')
 
 @bot.command(name='record', aliases=['r'])
 async def record_match(ctx):
@@ -1036,12 +1056,12 @@ async def show_help(ctx):
     embed.add_field(
         name="📈 統計コマンド",
         value=(
-            "`!stats` または `!s` - 全体統計\n"
-            "`!survivor_stats` または `!ss` - サバイバーピック数\n"
-            "`!winrate_stats` または `!ws` - サバイバーごとの勝率\n"
-            "`!kite_stats` または `!ks` - 平均牽制時間\n"
-            "`!map_stats` または `!ms` - マップごとの勝率\n"
-            "`!history` または `!h` - 最新5戦の履歴"
+            "`!s` - 全体統計\n"
+            "`!ss` - サバイバーピック数\n"
+            "`!ws` - サバイバーごとの勝率\n"
+            "`!ks` - 平均牽制時間\n"
+            "`!ms` - マップごとの勝率\n"
+            "`!h` - 最新5戦の履歴(試合日時準拠)"
         ),
         inline=False
     )
@@ -1056,6 +1076,428 @@ async def show_help(ctx):
     embed.set_footer(text="💡 統計コマンドは件数選択・フィルタリングに対応")
 
     await ctx.send(embed=embed)
+
+# ============================================
+# スラッシュコマンド（Ephemeral対応）
+# ============================================
+
+@tree.command(name="record", description="試合結果を記録（画像をアップロードしてください）")
+async def slash_record(interaction: discord.Interaction):
+    """スラッシュコマンド版 /record"""
+    await interaction.response.send_message(
+        "📸 **試合結果のスクリーンショットをアップロードしてください**\n\n"
+        "• 1枚または複数枚の画像を送信してください\n"
+        "• 複数画像の場合、すべての画像に同じ特質・Ban・人格が適用されます\n"
+        "• ハンターは自動検出されます\n"
+        "• 特質・Ban・人格は画像解析中に選択できます\n\n"
+        "⏱️ 60秒以内にアップロードしてください",
+        ephemeral=True
+    )
+
+    # ユーザーを待機リストに追加
+    user_id = interaction.user.id
+    channel_id = interaction.channel_id
+    waiting_for_images[user_id] = {
+        "waiting": True,
+        "channel_id": channel_id,
+        "interaction": interaction
+    }
+
+    # 60秒後にタイムアウト
+    await asyncio.sleep(60)
+    if user_id in waiting_for_images and waiting_for_images[user_id]["waiting"]:
+        del waiting_for_images[user_id]
+        try:
+            await interaction.followup.send(
+                "⏰ タイムアウトしました。もう一度 `/record` を実行してください。",
+                ephemeral=True
+            )
+        except:
+            pass
+
+@bot.event
+async def on_message(message):
+    """メッセージ受信時の処理（画像アップロード待機を含む）"""
+    # Botのメッセージは無視
+    if message.author.bot:
+        return
+
+    # 画像アップロード待機中のユーザーかチェック
+    user_id = message.author.id
+    if user_id in waiting_for_images and waiting_for_images[user_id]["waiting"]:
+        # チャンネルが一致するかチェック
+        if message.channel.id == waiting_for_images[user_id]["channel_id"]:
+            # 画像が添付されているかチェック
+            if message.attachments:
+                # 待機状態を解除
+                waiting_for_images[user_id]["waiting"] = False
+                interaction = waiting_for_images[user_id]["interaction"]
+
+                # 画像処理を開始
+                await process_record_images(message, interaction, message.attachments)
+
+                # 待機リストから削除
+                del waiting_for_images[user_id]
+                return  # プレフィックスコマンド処理をスキップ
+
+    # 通常のプレフィックスコマンド処理
+    await bot.process_commands(message)
+
+async def process_record_images(message, interaction, attachments):
+    """画像処理の共通関数（スラッシュコマンド用）"""
+    try:
+        await interaction.followup.send(
+            f"🔍 {len(attachments)}枚の画像を解析中...",
+            ephemeral=True
+        )
+    except:
+        # interactionが既に応答済みの場合はメッセージを送信
+        pass
+
+    all_match_data = []
+
+    for attachment in attachments:
+        if not attachment.content_type or not attachment.content_type.startswith('image/'):
+            continue
+
+        try:
+            image_bytes = await attachment.read()
+            match_data = await ocr.process_match_result(image_bytes)
+
+            if match_data:
+                all_match_data.append(match_data)
+            else:
+                try:
+                    await interaction.followup.send(
+                        f"⚠️ {attachment.filename} の解析に失敗しました",
+                        ephemeral=True
+                    )
+                except:
+                    pass
+        except Exception as e:
+            try:
+                await interaction.followup.send(
+                    f"❌ {attachment.filename} の処理中にエラー: {str(e)}",
+                    ephemeral=True
+                )
+            except:
+                pass
+
+    if not all_match_data:
+        try:
+            await interaction.followup.send(
+                "❌ 画像を解析できませんでした。もう一度お試しください。",
+                ephemeral=True
+            )
+        except:
+            pass
+        return
+
+    # 特質・Ban選択用のViewを表示
+    selection_view = SelectionView()
+
+    # 簡易サマリー作成
+    results_summary = []
+    for i, data in enumerate(all_match_data, 1):
+        hunter_name = data.get("hunter_character", "不明")
+        result = data.get("result", "不明")
+        map_name = data.get("map_name", "不明")
+        duration = data.get("duration", "不明")
+        results_summary.append(
+            f"`{i}.` **{result}** | {map_name} | {duration} | ハンター: {hunter_name}"
+        )
+
+    # OCR結果を表示
+    summary_text = f"✅ **{len(all_match_data)}件の画像解析完了！**\n\n" + "\n".join(results_summary)
+
+    try:
+        # 選択UIを表示
+        selection_msg = await interaction.followup.send(
+            selection_view.get_status_text(),
+            view=selection_view,
+            ephemeral=True
+        )
+        selection_view.message = selection_msg
+
+        # OCR結果を表示
+        await interaction.followup.send(summary_text, ephemeral=True)
+
+        # 選択完了状態に
+        selection_view.ocr_complete = True
+        await selection_view.update_status()
+
+        # 確定ボタンを表示（Ephemeral対応版）
+        button_view = ConfirmButtonView(all_match_data, selection_view, ephemeral=True)
+        await interaction.followup.send(
+            f"⬇️ **選択が完了したら下のボタンを押してください**\n"
+            f"（{len(all_match_data)}件の試合に同じ設定が適用されます）",
+            view=button_view,
+            ephemeral=True
+        )
+    except Exception as e:
+        try:
+            await interaction.followup.send(
+                f"❌ エラー: {str(e)}",
+                ephemeral=True
+            )
+        except:
+            pass
+
+@tree.command(name="stats", description="全体統計を表示")
+async def slash_stats(interaction: discord.Interaction):
+    """スラッシュコマンド版 /stats"""
+    await interaction.response.defer(ephemeral=True)
+
+    stats = db.get_overall_stats(str(interaction.user.id))
+
+    embed = discord.Embed(
+        title=f"📊 {interaction.user.display_name} の全体統計",
+        color=discord.Color.blue(),
+        timestamp=datetime.now()
+    )
+
+    # 戦績を "29勝12分15敗/56戦" 形式で表示
+    record_text = f"{stats['wins']}勝{stats['draws']}分{stats['losses']}敗/{stats['total_matches']}戦"
+
+    embed.add_field(name="📈 総試合数", value=stats["total_matches"], inline=True)
+    embed.add_field(name="📊 勝率", value=stats["win_rate"], inline=True)
+    embed.add_field(name="🏆 戦績", value=record_text, inline=False)
+
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+@tree.command(name="view", description="条件を指定してデータを表示")
+async def slash_view(interaction: discord.Interaction):
+    """スラッシュコマンド版 /view"""
+    await interaction.response.defer(ephemeral=True)
+
+    view = DataFilterView(str(interaction.user.id), ephemeral=True)
+    await interaction.followup.send(
+        "📊 **データフィルタリング**\n\n"
+        "条件を選択して、右下のボタンで表示件数を選んでください\n\n"
+        "※「全て」を選択すると、その条件ではフィルタリングされません",
+        view=view,
+        ephemeral=True
+    )
+
+@tree.command(name="history", description="最新5戦の試合履歴を表示")
+async def slash_history(interaction: discord.Interaction):
+    """スラッシュコマンド版 /history"""
+    await interaction.response.defer(ephemeral=True)
+
+    matches = db.get_recent_matches(str(interaction.user.id), limit=5)
+
+    if not matches:
+        await interaction.followup.send("まだ試合データがありません。", ephemeral=True)
+        return
+
+    embed = discord.Embed(
+        title=f"📜 {interaction.user.display_name} の試合履歴",
+        description="最新5戦（試合日時準拠）",
+        color=discord.Color.gold(),
+        timestamp=datetime.now()
+    )
+
+    for i, match in enumerate(matches, 1):
+        result_emoji = "🏆" if match.get("result") == "勝利" else "💀"
+
+        survivors = match.get("survivors", [])
+        survivor_names = [s.get("character_name") for s in survivors if s.get("character_name")]
+
+        # 試合日時を表示（played_atがない場合はmatch_dateを使用）
+        field_value = ""
+        date_displayed = False
+        if match.get("played_at"):
+            try:
+                from datetime import datetime as dt
+                played_dt = dt.fromisoformat(match["played_at"])
+                field_value += f"📅 {played_dt.strftime('%m/%d %H:%M')}\n"
+                date_displayed = True
+            except:
+                pass
+
+        if not date_displayed and match.get("match_date"):
+            try:
+                from datetime import datetime as dt
+                match_dt = dt.fromisoformat(match["match_date"])
+                field_value += f"📅 {match_dt.strftime('%m/%d %H:%M')} (記録日時)\n"
+            except:
+                pass
+
+        field_value += f"**{match.get('result', '不明')}** | {match.get('map_name', '不明')}\n"
+
+        if match.get("hunter_character"):
+            field_value += f"🔪 ハンター: {match.get('hunter_character')}\n"
+
+        # サバイバーを全て表示
+        if survivor_names:
+            field_value += f"👥 サバイバー: {', '.join(survivor_names)}"
+        else:
+            field_value += f"👥 サバイバー: データなし"
+
+        embed.add_field(
+            name=f"{result_emoji} 試合 {i}",
+            value=field_value,
+            inline=False
+        )
+
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+@tree.command(name="survivor_stats", description="サバイバーキャラごとのピック数を表示")
+async def slash_survivor_stats(interaction: discord.Interaction):
+    """スラッシュコマンド版 /survivor_stats"""
+    await interaction.response.defer(ephemeral=True)
+
+    view = LimitButtonView(str(interaction.user.id), "survivor", ephemeral=True)
+    await interaction.followup.send(
+        "👥 **サバイバーキャラ統計**\n\n集計する試合数を選択してください:",
+        view=view,
+        ephemeral=True
+    )
+
+@tree.command(name="winrate_stats", description="サバイバーキャラごとの勝率を表示")
+async def slash_winrate_stats(interaction: discord.Interaction):
+    """スラッシュコマンド版 /winrate_stats"""
+    await interaction.response.defer(ephemeral=True)
+
+    view = LimitButtonView(str(interaction.user.id), "survivor_winrate", ephemeral=True)
+    await interaction.followup.send(
+        "📊 **サバイバーキャラごとの勝率**\n\n集計する試合数を選択してください:",
+        view=view,
+        ephemeral=True
+    )
+
+@tree.command(name="kite_stats", description="サバイバーごとの平均牽制時間を表示")
+async def slash_kite_stats(interaction: discord.Interaction):
+    """スラッシュコマンド版 /kite_stats"""
+    await interaction.response.defer(ephemeral=True)
+
+    view = HunterSelectView(str(interaction.user.id), "kite", ephemeral=True)
+    await interaction.followup.send(
+        "⏱️ **平均牽制時間統計**\n\nハンターを選択してください:",
+        view=view,
+        ephemeral=True
+    )
+
+@tree.command(name="map_stats", description="マップごとの勝率を表示")
+async def slash_map_stats(interaction: discord.Interaction):
+    """スラッシュコマンド版 /map_stats"""
+    await interaction.response.defer(ephemeral=True)
+
+    view = HunterSelectView(str(interaction.user.id), "map", ephemeral=True)
+    await interaction.followup.send(
+        "🗺️ **マップ勝率統計**\n\nハンターを選択してください:",
+        view=view,
+        ephemeral=True
+    )
+
+@tree.command(name="help", description="コマンド一覧を表示")
+async def slash_help(interaction: discord.Interaction):
+    """スラッシュコマンド版 /help"""
+    await interaction.response.defer(ephemeral=True)
+
+    embed = discord.Embed(
+        title="🎮 第五人格 ハンター戦績Bot",
+        description="試合結果のスクショで自動記録＆分析！\nOCRで自動認識、統計データで戦績を可視化",
+        color=discord.Color.gold()
+    )
+
+    # 記録コマンド
+    embed.add_field(
+        name="📸 試合記録",
+        value=(
+            "`/record` または `/r` - 試合結果を記録\n"
+            "• 画像を後からアップロード\n"
+            "• ハンターは自動検出\n"
+            "• 特質・Ban・人格は選択メニューで入力\n"
+            "• 複数画像は同じ設定で一括記録"
+        ),
+        inline=False
+    )
+
+    # データ閲覧
+    embed.add_field(
+        name="📊 データ閲覧",
+        value=(
+            "`/view` または `/v` - データを絞り込んで表示\n"
+            "• ハンター、特質、マップで絞り込み\n"
+            "• 表示件数を選択（10/50/100/全て）"
+        ),
+        inline=False
+    )
+
+    # 統計コマンド
+    embed.add_field(
+        name="📈 統計コマンド",
+        value=(
+            "`/stats` (`/s`) - 全体統計\n"
+            "`/survivor_stats` (`/ss`) - サバイバーピック数\n"
+            "`/winrate_stats` (`/ws`) - サバイバーごとの勝率\n"
+            "`/kite_stats` (`/ks`) - 平均牽制時間\n"
+            "`/map_stats` (`/ms`) - マップごとの勝率\n"
+            "`/history` (`/h`) - 最新5戦の履歴"
+        ),
+        inline=False
+    )
+
+    # その他
+    embed.add_field(
+        name="ℹ️ その他",
+        value=(
+            "`/help` - このヘルプを表示\n\n"
+            "💡 **プレフィックスコマンドも使用可能**\n"
+            "`!record`, `!stats`, `!view` など\n"
+            "（プレフィックスコマンドは公開表示）"
+        ),
+        inline=False
+    )
+
+    embed.set_footer(text="💡 スラッシュコマンドは本人のみに表示されます（Ephemeral）")
+
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+# ============================================
+# 短いエイリアスのスラッシュコマンド
+# ============================================
+
+@tree.command(name="r", description="試合結果を記録（/recordの短縮版）")
+async def slash_r(interaction: discord.Interaction):
+    """スラッシュコマンド /r（/recordのエイリアス）"""
+    await slash_record(interaction)
+
+@tree.command(name="s", description="全体統計を表示（/statsの短縮版）")
+async def slash_s(interaction: discord.Interaction):
+    """スラッシュコマンド /s（/statsのエイリアス）"""
+    await slash_stats(interaction)
+
+@tree.command(name="v", description="条件を指定してデータを表示（/viewの短縮版）")
+async def slash_v(interaction: discord.Interaction):
+    """スラッシュコマンド /v（/viewのエイリアス）"""
+    await slash_view(interaction)
+
+@tree.command(name="h", description="最新5戦の試合履歴を表示（/historyの短縮版）")
+async def slash_h(interaction: discord.Interaction):
+    """スラッシュコマンド /h（/historyのエイリアス）"""
+    await slash_history(interaction)
+
+@tree.command(name="ss", description="サバイバーキャラごとのピック数を表示（/survivor_statsの短縮版）")
+async def slash_ss(interaction: discord.Interaction):
+    """スラッシュコマンド /ss（/survivor_statsのエイリアス）"""
+    await slash_survivor_stats(interaction)
+
+@tree.command(name="ws", description="サバイバーキャラごとの勝率を表示（/winrate_statsの短縮版）")
+async def slash_ws(interaction: discord.Interaction):
+    """スラッシュコマンド /ws（/winrate_statsのエイリアス）"""
+    await slash_winrate_stats(interaction)
+
+@tree.command(name="ks", description="サバイバーごとの平均牽制時間を表示（/kite_statsの短縮版）")
+async def slash_ks(interaction: discord.Interaction):
+    """スラッシュコマンド /ks（/kite_statsのエイリアス）"""
+    await slash_kite_stats(interaction)
+
+@tree.command(name="ms", description="マップごとの勝率を表示（/map_statsの短縮版）")
+async def slash_ms(interaction: discord.Interaction):
+    """スラッシュコマンド /ms（/map_statsのエイリアス）"""
+    await slash_map_stats(interaction)
 
 if __name__ == "__main__":
     TOKEN = os.getenv("DISCORD_BOT_TOKEN")
