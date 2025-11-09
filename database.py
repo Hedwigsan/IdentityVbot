@@ -56,15 +56,27 @@ class Database:
             .select("*")\
             .eq("user_id", user_id)\
             .execute()
-        
+
         matches = response.data
         total = len(matches)
-        wins = len([m for m in matches if m.get("result") == "勝利"])
-        
+        wins = 0
+        draws = 0
+        losses = 0
+
+        for m in matches:
+            result = m.get("result")
+            if result == "勝利":
+                wins += 1
+            elif result in ["辛勝", "平局", "引き分け"]:
+                draws += 1
+            else:
+                losses += 1
+
         return {
             "total_matches": total,
             "wins": wins,
-            "losses": total - wins,
+            "draws": draws,
+            "losses": losses,
             "win_rate": f"{(wins/total*100):.1f}%" if total > 0 else "0%"
         }
     
@@ -76,15 +88,28 @@ class Database:
             .gte("match_date", start_date)\
             .lte("match_date", end_date)\
             .execute()
-        
+
         matches = response.data
         total = len(matches)
-        wins = len([m for m in matches if m.get("result") == "勝利"])
-        
+        wins = 0
+        draws = 0
+        losses = 0
+
+        for m in matches:
+            result = m.get("result")
+            if result == "勝利":
+                wins += 1
+            elif result in ["辛勝", "平局", "引き分け"]:
+                draws += 1
+            else:
+                losses += 1
+
         return {
             "period": f"{start_date} ~ {end_date}",
             "total": total,
             "wins": wins,
+            "draws": draws,
+            "losses": losses,
             "win_rate": f"{(wins/total*100):.1f}%" if total > 0 else "0%"
         }
     
@@ -328,11 +353,12 @@ class Database:
         return sorted(result, key=lambda x: x["total"], reverse=True)
     
     def get_recent_matches(self, user_id: str, limit: int = 10) -> List[Dict]:
-        """最近の試合履歴（対戦日時の最新順）"""
+        """最近の試合履歴（対戦日時の最新順、played_atがNULLの場合はmatch_dateでソート）"""
         response = self.supabase.table("matches")\
             .select("*, survivors(*)")\
             .eq("user_id", user_id)\
-            .order("played_at", desc=True)\
+            .order("played_at", desc=True, nullsfirst=False)\
+            .order("match_date", desc=True)\
             .limit(limit)\
             .execute()
 
@@ -378,11 +404,16 @@ class Database:
                 continue
 
             if char not in survivor_stats:
-                survivor_stats[char] = {"total": 0, "wins": 0}
+                survivor_stats[char] = {"total": 0, "wins": 0, "draws": 0, "losses": 0}
 
             survivor_stats[char]["total"] += 1
-            if matches_dict[match_id] == "勝利":
+            result_text = matches_dict[match_id]
+            if result_text == "勝利":
                 survivor_stats[char]["wins"] += 1
+            elif result_text in ["辛勝", "平局", "引き分け"]:
+                survivor_stats[char]["draws"] += 1
+            else:
+                survivor_stats[char]["losses"] += 1
 
         # 結果を整形
         result = []
@@ -392,7 +423,8 @@ class Database:
                 "character": char,
                 "total": stats["total"],
                 "wins": stats["wins"],
-                "losses": stats["total"] - stats["wins"],
+                "draws": stats["draws"],
+                "losses": stats["losses"],
                 "win_rate": win_rate,
                 "win_rate_str": f"{win_rate:.1f}%"
             })

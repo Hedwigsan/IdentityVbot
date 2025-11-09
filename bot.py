@@ -56,7 +56,7 @@ class PersonaModal(Modal, title="人格を入力"):
     """人格入力用のモーダル"""
     persona_input = TextInput(
         label="人格",
-        placeholder="例: 中治り、左右、破壊欲 など",
+        placeholder="例: 右下上、左右、オペラ人格 など 自由入力",
         required=False,
         max_length=50
     )
@@ -421,22 +421,65 @@ class LimitButtonView(View):
         await interaction.followup.send(embed=embed)
 
     async def _show_survivor_winrate_stats(self, interaction: discord.Interaction, limit: int):
-        """サバイバー勝率統計を表示"""
+        """サバイバー勝率統計を表示（ソートボタン付き）"""
         winrate_data = db.get_win_rate_by_survivor(self.user_id, limit)
 
         if not winrate_data:
             await interaction.followup.send("まだデータがありません。")
             return
 
+        # ソート選択用のViewを表示
+        sort_view = WinrateSortView(winrate_data, limit)
         limit_text = f"最新{limit}戦" if limit else "全期間"
+
+        await interaction.followup.send(
+            f"📊 サバイバーキャラごとの勝率 ({limit_text})\n\n表示順を選択してください:",
+            view=sort_view
+        )
+
+
+class WinrateSortView(View):
+    """勝率統計ソート選択用のView"""
+    def __init__(self, winrate_data: list, limit: int):
+        super().__init__(timeout=300)
+        self.winrate_data = winrate_data
+        self.limit = limit
+
+    @discord.ui.button(label="📈 勝率が高い順", style=discord.ButtonStyle.primary, row=0)
+    async def sort_high_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        await interaction.response.defer()
+        # 勝率の高い順にソート
+        sorted_data = sorted(self.winrate_data, key=lambda x: x['win_rate'], reverse=True)
+        await self._show_sorted_stats(interaction, sorted_data, "勝率が高い順")
+        self.stop()
+
+    @discord.ui.button(label="📉 勝率が低い順", style=discord.ButtonStyle.secondary, row=0)
+    async def sort_low_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        await interaction.response.defer()
+        # 勝率の低い順にソート
+        sorted_data = sorted(self.winrate_data, key=lambda x: x['win_rate'])
+        await self._show_sorted_stats(interaction, sorted_data, "勝率が低い順")
+        self.stop()
+
+    @discord.ui.button(label="📊 試合数が多い順", style=discord.ButtonStyle.secondary, row=0)
+    async def sort_matches_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        await interaction.response.defer()
+        # 試合数の多い順にソート（デフォルト）
+        sorted_data = sorted(self.winrate_data, key=lambda x: x['total'], reverse=True)
+        await self._show_sorted_stats(interaction, sorted_data, "試合数が多い順")
+        self.stop()
+
+    async def _show_sorted_stats(self, interaction: discord.Interaction, sorted_data: list, sort_type: str):
+        """ソート済みの勝率統計を表示"""
+        limit_text = f"最新{self.limit}戦" if self.limit else "全期間"
         embed = discord.Embed(
             title=f"📊 サバイバーキャラごとの勝率 ({limit_text})",
-            description="対戦したサバイバーキャラの勝率",
+            description=f"表示順: {sort_type}",
             color=discord.Color.blue()
         )
 
         # Top 15
-        for i, data in enumerate(winrate_data[:15], 1):
+        for i, data in enumerate(sorted_data[:15], 1):
             # 勝率で色分け（高勝率は緑、低勝率は赤のエモジ）
             if data['win_rate'] >= 60:
                 rate_emoji = "🟢"
@@ -445,9 +488,10 @@ class LimitButtonView(View):
             else:
                 rate_emoji = "🔴"
 
+            # 新形式: "29勝12分15敗/56戦"
             embed.add_field(
                 name=f"{i}. {data['character']}",
-                value=f"{rate_emoji} **{data['win_rate_str']}** ({data['wins']}勝{data['losses']}敗 / {data['total']}戦)",
+                value=f"{rate_emoji} **{data['win_rate_str']}** ({data['wins']}勝{data['draws']}分{data['losses']}敗/{data['total']}戦)",
                 inline=True
             )
 
@@ -624,7 +668,19 @@ class DataFilterView(View):
 
         # 統計計算
         total = len(matches)
-        wins = len([m for m in matches if m.get("result") == "勝利"])
+        wins = 0
+        draws = 0
+        losses = 0
+
+        for m in matches:
+            result = m.get("result")
+            if result == "勝利":
+                wins += 1
+            elif result in ["辛勝", "平局", "引き分け"]:
+                draws += 1
+            else:
+                losses += 1
+
         win_rate = (wins / total * 100) if total > 0 else 0
 
         # フィルター条件を表示
@@ -649,11 +705,13 @@ class DataFilterView(View):
             color=discord.Color.blue()
         )
 
+        # 戦績を "29勝12分15敗/56戦" 形式で表示
+        record_text = f"{wins}勝{draws}分{losses}敗/{total}戦"
+
         embed.add_field(
             name="📈 統計",
-            value=f"試合数: **{total}戦**\n"
-                  f"勝利: **{wins}勝** ({win_rate:.1f}%)\n"
-                  f"敗北: **{total - wins}敗**",
+            value=f"勝率: **{win_rate:.1f}%**\n"
+                  f"戦績: **{record_text}**",
             inline=False
         )
 
@@ -701,9 +759,10 @@ async def record_match(ctx):
         await ctx.send(
             "❌ **画像を添付してください！**\n\n"
             "**使い方:**\n"
-            "`!record` (画像添付)\n\n"
+            "`!r` (画像添付)\n\n"
             "複数枚の画像を同時に添付できます。\n"
             "画像解析中に特質・Ban・人格を選択できます"
+            "インタラクションに失敗しても無視してください"
         )
         return
 
@@ -789,18 +848,20 @@ async def view_data(ctx):
 async def show_stats(ctx):
     """全体統計を表示"""
     stats = db.get_overall_stats(str(ctx.author.id))
-    
+
     embed = discord.Embed(
         title=f"📊 {ctx.author.display_name} の全体統計",
         color=discord.Color.blue(),
         timestamp=datetime.now()
     )
-    
+
+    # 戦績を "29勝12分15敗/56戦" 形式で表示
+    record_text = f"{stats['wins']}勝{stats['draws']}分{stats['losses']}敗/{stats['total_matches']}戦"
+
     embed.add_field(name="📈 総試合数", value=stats["total_matches"], inline=True)
-    embed.add_field(name="🏆 勝利", value=stats["wins"], inline=True)
-    embed.add_field(name="💀 敗北", value=stats["losses"], inline=True)
     embed.add_field(name="📊 勝率", value=stats["win_rate"], inline=True)
-    
+    embed.add_field(name="🏆 戦績", value=record_text, inline=False)
+
     await ctx.send(embed=embed)
 
 @bot.command(name='survivor_stats', aliases=['ss'])
@@ -899,25 +960,36 @@ async def show_history(ctx):
         survivors = match.get("survivors", [])
         survivor_names = [s.get("character_name") for s in survivors if s.get("character_name")]
 
-        # 試合日時を表示
+        # 試合日時を表示（played_atがない場合はmatch_dateを使用）
         field_value = ""
+        date_displayed = False
         if match.get("played_at"):
             try:
                 from datetime import datetime as dt
                 played_dt = dt.fromisoformat(match["played_at"])
                 field_value += f"📅 {played_dt.strftime('%m/%d %H:%M')}\n"
+                date_displayed = True
+            except:
+                pass
+
+        if not date_displayed and match.get("match_date"):
+            try:
+                from datetime import datetime as dt
+                match_dt = dt.fromisoformat(match["match_date"])
+                field_value += f"📅 {match_dt.strftime('%m/%d %H:%M')} (記録日時)\n"
             except:
                 pass
 
         field_value += f"**{match.get('result', '不明')}** | {match.get('map_name', '不明')}\n"
+
         if match.get("hunter_character"):
             field_value += f"🔪 ハンター: {match.get('hunter_character')}\n"
 
         # サバイバーを全て表示
         if survivor_names:
-            field_value += f"👥 サバイバー:\n"
-            for survivor_name in survivor_names:
-                field_value += f"  • {survivor_name}\n"
+            field_value += f"👥 サバイバー: {', '.join(survivor_names)}"
+        else:
+            field_value += f"👥 サバイバー: データなし"
 
         embed.add_field(
             name=f"{result_emoji} 試合 {i}",
@@ -942,7 +1014,6 @@ async def show_help(ctx):
         value=(
             "`!record` または `!r`\n"
             "試合結果を記録（画像添付必須、複数枚可）\n"
-            "• ハンターは自動検出\n"
             "• 特質・Ban・人格は選択メニューで入力\n"
             "• 複数画像は同じ設定で一括記録"
         ),
