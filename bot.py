@@ -39,11 +39,16 @@ HUNTER_CHARACTERS = [
     "「使徒」", "ヴァイオリニスト", "彫刻師", "「アンデッド」", "破輪",
     "漁師", "蝋人形師", "「悪夢」", "書記官", "隠者",
     "夜の番人", "オペラ歌手", "「フールズ・ゴールド」", "時空の影", "「足萎えの羊」",
-    "「フラバルー」", "雑貨商", "「ビリヤードプレイヤー」"
+    "フラバルー", "雑貨商", "「ビリヤードプレイヤー」"
 ]
 
 TRAITS = [
     "リッスン", "異常", "興奮", "巡視者", "瞬間移動", "監視者", "神出鬼没", "移形"
+]
+
+MAPS = [
+    "軍需工場", "赤の教会", "聖心病院", "月の河公園", "レオの思い出",
+    "永眠町", "中華街", "罪の森"
 ]
 
 # インタラクティブUI用のクラス
@@ -56,35 +61,43 @@ class PersonaModal(Modal, title="人格を入力"):
         max_length=50
     )
 
-    def __init__(self, match_data, trait, banned_chars):
+    def __init__(self, match_data_list, trait, banned_chars):
         super().__init__()
-        self.match_data = match_data
+        self.match_data_list = match_data_list if isinstance(match_data_list, list) else [match_data_list]
         self.trait = trait
         self.banned_chars = banned_chars
 
     async def on_submit(self, interaction: discord.Interaction):
         persona = self.persona_input.value.strip() if self.persona_input.value else None
 
-        # データを保存
-        self.match_data["trait_used"] = self.trait
-        self.match_data["persona"] = persona
-        self.match_data["banned_characters"] = self.banned_chars
+        # 複数の画像データを保存
+        saved_count = 0
+        for match_data in self.match_data_list:
+            # データを保存
+            match_data["trait_used"] = self.trait
+            match_data["persona"] = persona
+            match_data["banned_characters"] = self.banned_chars
 
-        # データベースに保存
-        saved = db.save_match(str(interaction.user.id), self.match_data)
+            # データベースに保存
+            saved = db.save_match(str(interaction.user.id), match_data)
+            if saved:
+                saved_count += 1
 
-        # 結果表示
+        # 結果表示（複数画像対応）
         embed = discord.Embed(
-            title="✅ 試合を記録しました",
+            title=f"✅ {len(self.match_data_list)}件の試合を記録しました",
             color=discord.Color.green(),
             timestamp=datetime.now()
         )
 
+        # 最初の試合データのみ詳細表示
+        match_data = self.match_data_list[0]
+
         # 試合日時
-        if self.match_data.get("played_at"):
+        if match_data.get("played_at"):
             try:
                 from datetime import datetime as dt
-                played_dt = dt.fromisoformat(self.match_data["played_at"])
+                played_dt = dt.fromisoformat(match_data["played_at"])
                 embed.add_field(
                     name="📅 試合日時",
                     value=played_dt.strftime("%m月%d日 %H:%M"),
@@ -94,31 +107,31 @@ class PersonaModal(Modal, title="人格を入力"):
                 pass
 
         # 試合結果
-        result_emoji = "🏆" if self.match_data.get("result") == "勝利" else "💀"
+        result_emoji = "🏆" if match_data.get("result") == "勝利" else "💀"
         embed.add_field(
             name=f"{result_emoji} 試合結果",
-            value=self.match_data.get("result", "不明"),
+            value=match_data.get("result", "不明"),
             inline=True
         )
 
         # マップ
         embed.add_field(
             name="🗺️ マップ",
-            value=self.match_data.get("map_name", "不明"),
+            value=match_data.get("map_name", "不明"),
             inline=True
         )
 
         # 時間
         embed.add_field(
             name="⏱️ 使用時間",
-            value=self.match_data.get("duration", "不明"),
+            value=match_data.get("duration", "不明"),
             inline=True
         )
 
         # ハンター情報
-        hunter_name = self.match_data.get("hunter_character")
+        hunter_name = match_data.get("hunter_character")
         if hunter_name:
-            embed.add_field(name="🔪 ハンター (自動検出)", value=hunter_name, inline=True)
+            embed.add_field(name="🔪 ハンター", value=hunter_name, inline=True)
         if self.trait:
             embed.add_field(name="⚡ 特質", value=self.trait, inline=True)
         if persona:
@@ -133,7 +146,7 @@ class PersonaModal(Modal, title="人格を入力"):
             )
 
         # サバイバー情報
-        survivors = self.match_data.get("survivors", [])
+        survivors = match_data.get("survivors", [])
         if survivors:
             survivor_text = ""
             for i, s in enumerate(survivors, 1):
@@ -262,9 +275,9 @@ class SelectionView(View):
 
 class ConfirmButtonView(View):
     """確定ボタン専用のView（別メッセージ用）"""
-    def __init__(self, match_data, selection_view):
+    def __init__(self, match_data_list, selection_view):
         super().__init__(timeout=300)
-        self.match_data = match_data
+        self.match_data_list = match_data_list if isinstance(match_data_list, list) else [match_data_list]
         self.selection_view = selection_view
 
     @discord.ui.button(label="確定して人格を入力", style=discord.ButtonStyle.primary, row=0)
@@ -288,11 +301,381 @@ class ConfirmButtonView(View):
         if len(unique_bans) > 3:
             unique_bans = unique_bans[:3]
 
-        # 人格入力モーダルを表示
-        modal = PersonaModal(self.match_data, self.selection_view.trait, unique_bans)
+        # 人格入力モーダルを表示（複数画像データを渡す）
+        modal = PersonaModal(self.match_data_list, self.selection_view.trait, unique_bans)
         await interaction.response.send_modal(modal)
         self.stop()
         self.selection_view.stop()
+
+
+class LimitButtonView(View):
+    """件数選択ボタン用の汎用View"""
+    def __init__(self, user_id: str, stat_type: str, hunter: str = None):
+        super().__init__(timeout=300)
+        self.user_id = user_id
+        self.stat_type = stat_type  # "survivor", "kite", "map", "survivor_winrate"
+        self.hunter = hunter
+
+    @discord.ui.button(label="📊 最新10戦", style=discord.ButtonStyle.secondary, row=0)
+    async def show_10_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        await self._show_stats(interaction, 10)
+
+    @discord.ui.button(label="📊 最新50戦", style=discord.ButtonStyle.secondary, row=0)
+    async def show_50_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        await self._show_stats(interaction, 50)
+
+    @discord.ui.button(label="📊 最新100戦", style=discord.ButtonStyle.secondary, row=0)
+    async def show_100_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        await self._show_stats(interaction, 100)
+
+    @discord.ui.button(label="📊 全て", style=discord.ButtonStyle.primary, row=0)
+    async def show_all_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        await self._show_stats(interaction, None)
+
+    async def _show_stats(self, interaction: discord.Interaction, limit: int):
+        """統計データを表示"""
+        await interaction.response.defer()
+
+        if self.stat_type == "survivor":
+            await self._show_survivor_stats(interaction, limit)
+        elif self.stat_type == "kite":
+            await self._show_kite_stats(interaction, limit)
+        elif self.stat_type == "map":
+            await self._show_map_stats(interaction, limit)
+        elif self.stat_type == "survivor_winrate":
+            await self._show_survivor_winrate_stats(interaction, limit)
+
+        self.stop()
+
+    async def _show_survivor_stats(self, interaction: discord.Interaction, limit: int):
+        """サバイバー統計を表示"""
+        pick_rates = db.get_survivor_pick_rates(self.user_id, limit)
+
+        if not pick_rates:
+            await interaction.followup.send("まだデータがありません。")
+            return
+
+        limit_text = f"最新{limit}戦" if limit else "全期間"
+        embed = discord.Embed(
+            title=f"👥 サバイバーキャラ統計 ({limit_text})",
+            description="対戦したサバイバーキャラのピック数",
+            color=discord.Color.purple()
+        )
+
+        # Top 15
+        for i, data in enumerate(pick_rates[:15], 1):
+            embed.add_field(
+                name=f"{i}. {data['character']}",
+                value=f"**{data['picks']}回**",
+                inline=True
+            )
+
+        await interaction.followup.send(embed=embed)
+
+    async def _show_kite_stats(self, interaction: discord.Interaction, limit: int):
+        """牽制統計を表示"""
+        kite_data = db.get_avg_kite_time_by_survivor(self.user_id, self.hunter, limit)
+
+        if not kite_data:
+            await interaction.followup.send("まだデータがありません。")
+            return
+
+        limit_text = f"最新{limit}戦" if limit else "全期間"
+        hunter_text = f" vs {self.hunter}" if self.hunter else ""
+        embed = discord.Embed(
+            title=f"⏱️ サバイバーごとの平均牽制時間{hunter_text} ({limit_text})",
+            color=discord.Color.orange()
+        )
+
+        for i, data in enumerate(kite_data[:15], 1):
+            embed.add_field(
+                name=f"{i}. {data['character']}",
+                value=f"平均: **{data['avg_kite_time']}** (n={data['samples']})",
+                inline=True
+            )
+
+        await interaction.followup.send(embed=embed)
+
+    async def _show_map_stats(self, interaction: discord.Interaction, limit: int):
+        """マップ統計を表示"""
+        map_data = db.get_win_rate_by_hunter_and_map(self.user_id, self.hunter, limit)
+
+        if not map_data:
+            await interaction.followup.send("まだデータがありません。")
+            return
+
+        limit_text = f"最新{limit}戦" if limit else "全期間"
+        hunter_text = f" vs {self.hunter}" if self.hunter else ""
+        embed = discord.Embed(
+            title=f"🗺️ マップごとの勝率{hunter_text} ({limit_text})",
+            color=discord.Color.green()
+        )
+
+        for data in map_data:
+            embed.add_field(
+                name=data['map'],
+                value=f"**{data['win_rate']}** ({data['wins']}/{data['total']})",
+                inline=True
+            )
+
+        await interaction.followup.send(embed=embed)
+
+    async def _show_survivor_winrate_stats(self, interaction: discord.Interaction, limit: int):
+        """サバイバー勝率統計を表示"""
+        winrate_data = db.get_win_rate_by_survivor(self.user_id, limit)
+
+        if not winrate_data:
+            await interaction.followup.send("まだデータがありません。")
+            return
+
+        limit_text = f"最新{limit}戦" if limit else "全期間"
+        embed = discord.Embed(
+            title=f"📊 サバイバーキャラごとの勝率 ({limit_text})",
+            description="対戦したサバイバーキャラの勝率",
+            color=discord.Color.blue()
+        )
+
+        # Top 15
+        for i, data in enumerate(winrate_data[:15], 1):
+            # 勝率で色分け（高勝率は緑、低勝率は赤のエモジ）
+            if data['win_rate'] >= 60:
+                rate_emoji = "🟢"
+            elif data['win_rate'] >= 40:
+                rate_emoji = "🟡"
+            else:
+                rate_emoji = "🔴"
+
+            embed.add_field(
+                name=f"{i}. {data['character']}",
+                value=f"{rate_emoji} **{data['win_rate_str']}** ({data['wins']}勝{data['losses']}敗 / {data['total']}戦)",
+                inline=True
+            )
+
+        await interaction.followup.send(embed=embed)
+
+
+class HunterSelectView(View):
+    """ハンター選択用のView（kite_stats, map_stats用）"""
+    def __init__(self, user_id: str, stat_type: str):
+        super().__init__(timeout=300)
+        self.user_id = user_id
+        self.stat_type = stat_type  # "kite" or "map"
+        self.selected_hunter = None
+
+        # ハンター選択 - 前半 (row 0)
+        hunter_p1_options = [discord.SelectOption(label="全て", value="all", default=True)]
+        hunter_p1_options.extend([discord.SelectOption(label=h, value=h) for h in HUNTER_CHARACTERS[:23]])
+        hunter_p1_select = Select(
+            placeholder="🔪 ハンター - 前半",
+            options=hunter_p1_options,
+            row=0
+        )
+        hunter_p1_select.callback = self.hunter_callback
+        self.add_item(hunter_p1_select)
+
+        # ハンター選択 - 後半 (row 1)
+        hunter_p2_options = [discord.SelectOption(label="全て", value="all")]
+        hunter_p2_options.extend([discord.SelectOption(label=h, value=h) for h in HUNTER_CHARACTERS[23:]])
+        hunter_p2_select = Select(
+            placeholder="🔪 ハンター - 後半",
+            options=hunter_p2_options,
+            row=1
+        )
+        hunter_p2_select.callback = self.hunter_callback
+        self.add_item(hunter_p2_select)
+
+    async def hunter_callback(self, interaction: discord.Interaction):
+        value = interaction.data["values"][0]
+        self.selected_hunter = None if value == "all" else value
+        try:
+            await interaction.response.defer()
+        except:
+            pass
+
+    @discord.ui.button(label="件数を選択", style=discord.ButtonStyle.primary, row=2)
+    async def confirm_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        await interaction.response.defer()
+
+        # 件数選択用のViewを表示
+        limit_view = LimitButtonView(self.user_id, self.stat_type, self.selected_hunter)
+        hunter_text = f"**{self.selected_hunter}**" if self.selected_hunter else "**全ハンター**"
+        await interaction.followup.send(
+            f"ハンター: {hunter_text}\n\n集計する試合数を選択してください:",
+            view=limit_view
+        )
+        self.stop()
+
+
+class DataFilterView(View):
+    """データフィルタリング用のView"""
+    def __init__(self, user_id: str):
+        super().__init__(timeout=300)
+        self.user_id = user_id
+        self.filters = {
+            "hunter": None,
+            "trait": None,
+            "map": None,
+            "limit": None
+        }
+
+        # 特質選択 (row 0)
+        trait_options = [discord.SelectOption(label="全て", value="all", default=True)]
+        trait_options.extend([discord.SelectOption(label=t, value=t) for t in TRAITS])
+        trait_select = Select(
+            placeholder="⚡ 特質を選択",
+            options=trait_options,
+            custom_id="trait_select",
+            row=0
+        )
+        trait_select.callback = self.trait_callback
+        self.add_item(trait_select)
+
+        # マップ選択 (row 1)
+        map_options = [discord.SelectOption(label="全て", value="all", default=True)]
+        map_options.extend([discord.SelectOption(label=m, value=m) for m in MAPS])
+        map_select = Select(
+            placeholder="🗺️ マップを選択",
+            options=map_options,
+            custom_id="map_select",
+            row=1
+        )
+        map_select.callback = self.map_callback
+        self.add_item(map_select)
+
+        # ハンター選択 - 前半 (row 2)
+        hunter_p1_options = [discord.SelectOption(label="全て", value="all", default=True)]
+        hunter_p1_options.extend([discord.SelectOption(label=h, value=h) for h in HUNTER_CHARACTERS[:23]])
+        hunter_p1_select = Select(
+            placeholder="🔪 ハンター - 前半",
+            options=hunter_p1_options,
+            custom_id="hunter_p1_select",
+            row=2
+        )
+        hunter_p1_select.callback = self.hunter_callback
+        self.add_item(hunter_p1_select)
+
+        # ハンター選択 - 後半 (row 3)
+        hunter_p2_options = [discord.SelectOption(label="全て", value="all")]
+        hunter_p2_options.extend([discord.SelectOption(label=h, value=h) for h in HUNTER_CHARACTERS[23:]])
+        hunter_p2_select = Select(
+            placeholder="🔪 ハンター - 後半",
+            options=hunter_p2_options,
+            custom_id="hunter_p2_select",
+            row=3
+        )
+        hunter_p2_select.callback = self.hunter_callback
+        self.add_item(hunter_p2_select)
+
+    async def hunter_callback(self, interaction: discord.Interaction):
+        value = interaction.data["values"][0]
+        self.filters["hunter"] = None if value == "all" else value
+        try:
+            await interaction.response.defer()
+        except:
+            pass
+
+    async def trait_callback(self, interaction: discord.Interaction):
+        value = interaction.data["values"][0]
+        self.filters["trait"] = None if value == "all" else value
+        try:
+            await interaction.response.defer()
+        except:
+            pass
+
+    async def map_callback(self, interaction: discord.Interaction):
+        value = interaction.data["values"][0]
+        self.filters["map"] = None if value == "all" else value
+        try:
+            await interaction.response.defer()
+        except:
+            pass
+
+    @discord.ui.button(label="📊 最新10戦", style=discord.ButtonStyle.secondary, row=4)
+    async def show_10_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        self.filters["limit"] = 10
+        await self._show_data(interaction)
+
+    @discord.ui.button(label="📊 最新50戦", style=discord.ButtonStyle.secondary, row=4)
+    async def show_50_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        self.filters["limit"] = 50
+        await self._show_data(interaction)
+
+    @discord.ui.button(label="📊 最新100戦", style=discord.ButtonStyle.secondary, row=4)
+    async def show_100_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        self.filters["limit"] = 100
+        await self._show_data(interaction)
+
+    @discord.ui.button(label="📊 全て表示", style=discord.ButtonStyle.primary, row=4)
+    async def show_all_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        self.filters["limit"] = None
+        await self._show_data(interaction)
+
+    async def _show_data(self, interaction: discord.Interaction):
+        """データを取得して表示"""
+        await interaction.response.defer()
+
+        # フィルター適用してデータ取得
+        matches = db.get_filtered_matches(self.user_id, self.filters)
+
+        if not matches:
+            await interaction.followup.send("❌ 条件に一致するデータが見つかりませんでした。")
+            self.stop()
+            return
+
+        # 統計計算
+        total = len(matches)
+        wins = len([m for m in matches if m.get("result") == "勝利"])
+        win_rate = (wins / total * 100) if total > 0 else 0
+
+        # フィルター条件を表示
+        filter_text = []
+        if self.filters["hunter"]:
+            filter_text.append(f"🔪 ハンター: {self.filters['hunter']}")
+        if self.filters["trait"]:
+            filter_text.append(f"⚡ 特質: {self.filters['trait']}")
+        if self.filters["map"]:
+            filter_text.append(f"🗺️ マップ: {self.filters['map']}")
+        if self.filters["limit"]:
+            filter_text.append(f"📊 件数: 最新{self.filters['limit']}戦")
+        else:
+            filter_text.append(f"📊 件数: 全て")
+
+        filter_summary = "\n".join(filter_text) if filter_text else "フィルターなし（全データ）"
+
+        # Embed作成
+        embed = discord.Embed(
+            title="📊 試合データ",
+            description=f"**絞り込み条件:**\n{filter_summary}",
+            color=discord.Color.blue()
+        )
+
+        embed.add_field(
+            name="📈 統計",
+            value=f"試合数: **{total}戦**\n"
+                  f"勝利: **{wins}勝** ({win_rate:.1f}%)\n"
+                  f"敗北: **{total - wins}敗**",
+            inline=False
+        )
+
+        # 最近の試合結果（最大10件）
+        recent_matches = matches[:10]
+        match_list = []
+        for i, m in enumerate(recent_matches, 1):
+            result_emoji = "🏆" if m.get("result") == "勝利" else "💀"
+            hunter = m.get("hunter_character", "不明")
+            map_name = m.get("map_name", "不明")
+            duration = m.get("match_duration", "不明")
+            match_list.append(f"`{i}.` {result_emoji} {hunter} | {map_name} | {duration}")
+
+        if match_list:
+            embed.add_field(
+                name=f"🎮 最近の試合 (最大10件表示)",
+                value="\n".join(match_list),
+                inline=False
+            )
+
+        await interaction.followup.send(embed=embed)
+        self.stop()
 
 
 @bot.event
@@ -309,7 +692,8 @@ async def record_match(ctx):
     使い方:
     !record (画像を添付)
 
-    ※画像を添付してください
+    ※画像を1枚または複数枚添付してください
+    ※複数画像の場合、すべての画像に同じ特質・Ban・人格が適用されます
     ※ハンターは自動検出されます
     ※特質・Ban・人格は画像解析中に選択できます
     """
@@ -318,6 +702,7 @@ async def record_match(ctx):
             "❌ **画像を添付してください！**\n\n"
             "**使い方:**\n"
             "`!record` (画像添付)\n\n"
+            "複数枚の画像を同時に添付できます。\n"
             "画像解析中に特質・Ban・人格を選択できます"
         )
         return
@@ -331,38 +716,46 @@ async def record_match(ctx):
     # メッセージ参照を設定
     selection_view.message = selection_msg
 
-    processing_msg = await ctx.send("🔄 画像を解析中...")
+    # 複数画像の場合
+    image_count = len(ctx.message.attachments)
+    processing_msg = await ctx.send(f"🔄 {image_count}枚の画像を解析中...")
 
     try:
-        # 画像ダウンロード
-        attachment = ctx.message.attachments[0]
-        image_bytes = await attachment.read()
+        # 複数画像を処理
+        match_data_list = []
+        results_summary = []
 
-        # OCR処理
-        match_data = ocr.process_image(image_bytes)
+        for i, attachment in enumerate(ctx.message.attachments, 1):
+            # 画像ダウンロード
+            image_bytes = await attachment.read()
 
-        # OCR結果を表示
-        hunter_name = match_data.get("hunter_character", "不明")
-        result = match_data.get("result", "不明")
-        map_name = match_data.get("map_name", "不明")
-        duration = match_data.get("duration", "不明")
+            # OCR処理
+            match_data = ocr.process_image(image_bytes)
+            match_data_list.append(match_data)
 
-        await processing_msg.edit(
-            content=f"✅ **画像解析完了！**\n\n"
-                    f"📊 結果: **{result}**\n"
-                    f"🗺️ マップ: **{map_name}**\n"
-                    f"⏱️ 使用時間: **{duration}**\n"
-                    f"🔪 ハンター: **{hunter_name}** (自動検出)"
-        )
+            # 簡易サマリー作成
+            hunter_name = match_data.get("hunter_character", "不明")
+            result = match_data.get("result", "不明")
+            map_name = match_data.get("map_name", "不明")
+            duration = match_data.get("duration", "不明")
+
+            results_summary.append(
+                f"`{i}.` **{result}** | {map_name} | {duration} | ハンター: {hunter_name}"
+            )
+
+        # OCR結果をまとめて表示
+        summary_text = f"✅ **{image_count}件の画像解析完了！**\n\n" + "\n".join(results_summary)
+        await processing_msg.edit(content=summary_text)
 
         # 選択メッセージを更新（OCR完了状態に）
         selection_view.ocr_complete = True
         await selection_view.update_status()
 
-        # 確定ボタンを別メッセージで送信
-        button_view = ConfirmButtonView(match_data, selection_view)
+        # 確定ボタンを別メッセージで送信（複数画像データを渡す）
+        button_view = ConfirmButtonView(match_data_list, selection_view)
         await ctx.send(
-            "⬇️ **選択が完了したら下のボタンを押してください**",
+            f"⬇️ **選択が完了したら下のボタンを押してください**\n"
+            f"（{image_count}件の試合に同じ設定が適用されます）",
             view=button_view
         )
 
@@ -373,6 +766,24 @@ async def record_match(ctx):
         print(f"Error in record_match: {e}")
         import traceback
         traceback.print_exc()
+
+@bot.command(name='view', aliases=['v'])
+async def view_data(ctx):
+    """
+    データを絞り込んで表示
+
+    使い方:
+    !view または !v
+
+    ※条件を選択してデータを表示できます
+    """
+    view = DataFilterView(str(ctx.author.id))
+    await ctx.send(
+        "📊 **データを絞り込んで表示**\n\n"
+        "条件を選択して「データを表示」ボタンを押してください。\n"
+        "※「全て」を選択すると、その条件ではフィルタリングされません",
+        view=view
+    )
 
 @bot.command(name='stats', aliases=['s'])
 async def show_stats(ctx):
@@ -394,121 +805,94 @@ async def show_stats(ctx):
 
 @bot.command(name='survivor_stats', aliases=['ss'])
 async def survivor_stats(ctx):
-    """サバイバーキャラごとの統計"""
-    pick_rates = db.get_survivor_pick_rates(str(ctx.author.id))
-    
-    if not pick_rates:
-        await ctx.send("まだデータがありません。")
-        return
-    
-    embed = discord.Embed(
-        title="👥 サバイバーキャラ統計",
-        description="対戦したサバイバーキャラのピック数",
-        color=discord.Color.purple(),
-        timestamp=datetime.now()
+    """
+    サバイバーキャラごとの統計
+
+    使い方:
+    !survivor_stats または !ss
+
+    ※集計する試合数を選択できます
+    """
+    view = LimitButtonView(str(ctx.author.id), "survivor")
+    await ctx.send(
+        "👥 **サバイバーキャラ統計**\n\n"
+        "集計する試合数を選択してください:",
+        view=view
     )
-    
-    # Top 10
-    for i, data in enumerate(pick_rates[:10], 1):
-        embed.add_field(
-            name=f"{i}. {data['character']}",
-            value=f"**{data['picks']}回**",
-            inline=True
-        )
-    
-    await ctx.send(embed=embed)
+
+@bot.command(name='winrate_stats', aliases=['ws'])
+async def winrate_stats(ctx):
+    """
+    サバイバーキャラごとの勝率
+
+    使い方:
+    !winrate_stats または !ws
+
+    ※集計する試合数を選択できます
+    """
+    view = LimitButtonView(str(ctx.author.id), "survivor_winrate")
+    await ctx.send(
+        "📊 **サバイバーキャラごとの勝率**\n\n"
+        "集計する試合数を選択してください:",
+        view=view
+    )
 
 @bot.command(name='kite_stats', aliases=['ks'])
 async def kite_stats(ctx):
-    """サバイバーごとの平均牽制時間"""
-    kite_data = db.get_avg_kite_time_by_survivor(str(ctx.author.id))
-    
-    if not kite_data:
-        await ctx.send("まだデータがありません。")
-        return
-    
-    embed = discord.Embed(
-        title="⏱️ サバイバーごとの平均牽制時間",
-        color=discord.Color.orange(),
-        timestamp=datetime.now()
+    """
+    サバイバーごとの平均牽制時間
+
+    使い方:
+    !kite_stats または !ks
+
+    ※ハンターを絞り込んで、集計する試合数を選択できます
+    """
+    view = HunterSelectView(str(ctx.author.id), "kite")
+    await ctx.send(
+        "⏱️ **サバイバーごとの平均牽制時間**\n\n"
+        "ハンターを選択してください（全てでも可）:",
+        view=view
     )
-    
-    for i, data in enumerate(kite_data[:10], 1):
-        embed.add_field(
-            name=f"{i}. {data['character']}",
-            value=f"平均: **{data['avg_kite_time']}** (n={data['samples']})",
-            inline=True
-        )
-    
-    await ctx.send(embed=embed)
 
 @bot.command(name='map_stats', aliases=['ms'])
-async def map_stats(ctx, hunter: str = None):
-    """マップごとの勝率"""
-    map_data = db.get_win_rate_by_hunter_and_map(str(ctx.author.id), hunter)
-    
-    if not map_data:
-        await ctx.send("まだデータがありません。")
-        return
-    
-    title = f"🗺️ マップごとの勝率"
-    if hunter:
-        title += f" ({hunter})"
-    
-    embed = discord.Embed(
-        title=title,
-        color=discord.Color.green(),
-        timestamp=datetime.now()
-    )
-    
-    for data in map_data:
-        embed.add_field(
-            name=data['map'],
-            value=f"**{data['win_rate']}** ({data['wins']}/{data['total']})",
-            inline=True
-        )
-    
-    await ctx.send(embed=embed)
+async def map_stats(ctx):
+    """
+    マップごとの勝率
 
-@bot.command(name='ban_stats', aliases=['bs'])
-async def ban_stats(ctx):
-    """Banキャラごとの勝率"""
-    ban_data = db.get_win_rate_by_ban(str(ctx.author.id))
-    
-    if not ban_data:
-        await ctx.send("まだデータがありません。")
-        return
-    
-    embed = discord.Embed(
-        title="🚫 Banキャラごとの勝率",
-        color=discord.Color.red(),
-        timestamp=datetime.now()
+    使い方:
+    !map_stats または !ms
+
+    ※ハンターを絞り込んで、集計する試合数を選択できます
+    """
+    view = HunterSelectView(str(ctx.author.id), "map")
+    await ctx.send(
+        "🗺️ **マップごとの勝率**\n\n"
+        "ハンターを選択してください（全てでも可）:",
+        view=view
     )
-    
-    for data in ban_data[:10]:
-        embed.add_field(
-            name=data['banned_character'],
-            value=f"**{data['win_rate']}** ({data['wins']}/{data['total']})",
-            inline=True
-        )
-    
-    await ctx.send(embed=embed)
 
 @bot.command(name='history', aliases=['h'])
-async def show_history(ctx, limit: int = 5):
-    """最近の試合履歴"""
-    matches = db.get_recent_matches(str(ctx.author.id), limit)
-    
+async def show_history(ctx):
+    """
+    最近の試合履歴
+
+    使い方:
+    !history または !h
+
+    ※固定で最新5戦を表示します
+    """
+    matches = db.get_recent_matches(str(ctx.author.id), 5)
+
     if not matches:
         await ctx.send("まだ試合が記録されていません。\n`!record` で記録を開始しましょう！")
         return
-    
+
     embed = discord.Embed(
-        title=f"📋 最近の試合履歴 (直近{len(matches)}件)",
+        title=f"📋 最近の試合履歴 (最新5戦)",
         color=discord.Color.purple(),
         timestamp=datetime.now()
     )
-    
+
     for i, match in enumerate(matches, 1):
         result_emoji = "🏆" if match.get("result") == "勝利" else "💀"
 
@@ -527,16 +911,20 @@ async def show_history(ctx, limit: int = 5):
 
         field_value += f"**{match.get('result', '不明')}** | {match.get('map_name', '不明')}\n"
         if match.get("hunter_character"):
-            field_value += f"ハンター: {match.get('hunter_character')}\n"
+            field_value += f"🔪 ハンター: {match.get('hunter_character')}\n"
+
+        # サバイバーを全て表示
         if survivor_names:
-            field_value += f"相手: {', '.join(survivor_names[:2])}..."
+            field_value += f"👥 サバイバー:\n"
+            for survivor_name in survivor_names:
+                field_value += f"  • {survivor_name}\n"
 
         embed.add_field(
             name=f"{result_emoji} 試合 {i}",
             value=field_value,
-            inline=True
+            inline=False  # 横並びではなく縦に表示
         )
-    
+
     await ctx.send(embed=embed)
 
 @bot.command(name='help', aliases=['commands'])
@@ -544,34 +932,58 @@ async def show_help(ctx):
     """コマンド一覧"""
     embed = discord.Embed(
         title="🎮 第五人格 ハンター戦績Bot",
-        description="試合結果のスクショで自動記録＆分析！",
+        description="試合結果のスクショで自動記録＆分析！\nOCRで自動認識、統計データで戦績を可視化",
         color=discord.Color.gold()
     )
-    
-    commands_list = [
-        ("📸 記録コマンド", ""),
-        ("!record", "試合結果を記録（画像添付必須）\n※ハンターは自動検出\n※特質・Ban・人格は選択メニューから入力"),
-        ("", ""),
-        ("📊 統計コマンド", ""),
-        ("!stats", "全体統計を表示"),
-        ("!survivor_stats", "サバイバーキャラごとのピック数"),
-        ("!kite_stats", "サバイバーごとの平均牽制時間"),
-        ("!map_stats [ハンター]", "マップごとの勝率"),
-        ("!ban_stats", "Banキャラごとの勝率"),
-        ("!history [件数]", "最近の試合履歴"),
-        ("", ""),
-        ("ℹ️ その他", ""),
-        ("!help", "このヘルプを表示"),
-    ]
-    
-    for name, value in commands_list:
-        if name and not value:
-            embed.add_field(name=name, value="\u200b", inline=False)
-        elif name and value:
-            embed.add_field(name=name, value=value, inline=False)
-    
-    embed.set_footer(text="エイリアスコマンド: !r, !s, !ss, !ks, !ms, !bs, !h")
-    
+
+    # 記録コマンド
+    embed.add_field(
+        name="📸 試合記録",
+        value=(
+            "`!record` または `!r`\n"
+            "試合結果を記録（画像添付必須、複数枚可）\n"
+            "• ハンターは自動検出\n"
+            "• 特質・Ban・人格は選択メニューで入力\n"
+            "• 複数画像は同じ設定で一括記録"
+        ),
+        inline=False
+    )
+
+    # データ閲覧コマンド
+    embed.add_field(
+        name="📊 データ閲覧",
+        value=(
+            "`!view` または `!v`\n"
+            "条件を絞り込んでデータを表示\n"
+            "• ハンター、特質、マップで絞り込み\n"
+            "• 表示件数を選択（10/50/100/全て）"
+        ),
+        inline=False
+    )
+
+    # 統計コマンド
+    embed.add_field(
+        name="📈 統計コマンド",
+        value=(
+            "`!stats` または `!s` - 全体統計\n"
+            "`!survivor_stats` または `!ss` - サバイバーピック数\n"
+            "`!winrate_stats` または `!ws` - サバイバーごとの勝率\n"
+            "`!kite_stats` または `!ks` - 平均牽制時間\n"
+            "`!map_stats` または `!ms` - マップごとの勝率\n"
+            "`!history` または `!h` - 最新5戦の履歴"
+        ),
+        inline=False
+    )
+
+    # その他
+    embed.add_field(
+        name="ℹ️ その他",
+        value="`!help` - このヘルプを表示",
+        inline=False
+    )
+
+    embed.set_footer(text="💡 統計コマンドは件数選択・フィルタリングに対応")
+
     await ctx.send(embed=embed)
 
 if __name__ == "__main__":

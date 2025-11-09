@@ -76,3 +76,23 @@ htmlcov/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+# Test files
+test*.py
+test*.png
+test*.PNG
+test*.txt
+debug*.py
+debug*.png
+*_debug.png
+*_result.txt
+*_output.txt
+nul
+
+# Results and templates
+results/
+templates/
+
+# Icon organization
+organize_icons.py
+run_bot.py
