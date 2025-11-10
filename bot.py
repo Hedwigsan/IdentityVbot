@@ -412,9 +412,11 @@ class LimitButtonView(View):
         )
 
         for data in map_data:
+            # 戦績を "X勝Y分Z敗/N戦" 形式で表示
+            record_text = f"{data['wins']}勝{data['draws']}分{data['losses']}敗/{data['total']}戦"
             embed.add_field(
                 name=data['map'],
-                value=f"**{data['win_rate']}** ({data['wins']}/{data['total']})",
+                value=f"**{data['win_rate']}**\n{record_text}",
                 inline=True
             )
 
@@ -559,8 +561,12 @@ class DataFilterView(View):
             "hunter": None,
             "trait": None,
             "map": None,
+            "persona": None,
             "limit": None
         }
+
+        # 人格リストを取得（最大24個まで）
+        personas = db.get_all_personas(user_id)
 
         # 特質選択 (row 0)
         trait_options = [discord.SelectOption(label="全て", value="all", default=True)]
@@ -574,38 +580,52 @@ class DataFilterView(View):
         trait_select.callback = self.trait_callback
         self.add_item(trait_select)
 
-        # マップ選択 (row 1)
+        # 人格選択 (row 1) - 人格がある場合のみ追加
+        if personas:
+            persona_options = [discord.SelectOption(label="全て", value="all", default=True)]
+            # 最大24個まで（"全て"と合わせて25個がDiscordの上限）
+            persona_options.extend([discord.SelectOption(label=p, value=p) for p in personas[:24]])
+            persona_select = Select(
+                placeholder="🎭 人格を選択",
+                options=persona_options,
+                custom_id="persona_select",
+                row=1
+            )
+            persona_select.callback = self.persona_callback
+            self.add_item(persona_select)
+
+        # マップ選択 (row 2)
         map_options = [discord.SelectOption(label="全て", value="all", default=True)]
         map_options.extend([discord.SelectOption(label=m, value=m) for m in MAPS])
         map_select = Select(
             placeholder="🗺️ マップを選択",
             options=map_options,
             custom_id="map_select",
-            row=1
+            row=2
         )
         map_select.callback = self.map_callback
         self.add_item(map_select)
 
-        # ハンター選択 - 前半 (row 2)
+        # ハンター選択 - 前半 (row 3)
         hunter_p1_options = [discord.SelectOption(label="全て", value="all", default=True)]
         hunter_p1_options.extend([discord.SelectOption(label=h, value=h) for h in HUNTER_CHARACTERS[:23]])
         hunter_p1_select = Select(
             placeholder="🔪 ハンター - 前半",
             options=hunter_p1_options,
             custom_id="hunter_p1_select",
-            row=2
+            row=3
         )
         hunter_p1_select.callback = self.hunter_callback
         self.add_item(hunter_p1_select)
 
-        # ハンター選択 - 後半 (row 3)
+        # ハンター選択 - 後半 (row 4)
         hunter_p2_options = [discord.SelectOption(label="全て", value="all")]
         hunter_p2_options.extend([discord.SelectOption(label=h, value=h) for h in HUNTER_CHARACTERS[23:]])
         hunter_p2_select = Select(
             placeholder="🔪 ハンター - 後半",
             options=hunter_p2_options,
             custom_id="hunter_p2_select",
-            row=3
+            row=4
         )
         hunter_p2_select.callback = self.hunter_callback
         self.add_item(hunter_p2_select)
@@ -621,6 +641,14 @@ class DataFilterView(View):
     async def trait_callback(self, interaction: discord.Interaction):
         value = interaction.data["values"][0]
         self.filters["trait"] = None if value == "all" else value
+        try:
+            await interaction.response.defer()
+        except:
+            pass
+
+    async def persona_callback(self, interaction: discord.Interaction):
+        value = interaction.data["values"][0]
+        self.filters["persona"] = None if value == "all" else value
         try:
             await interaction.response.defer()
         except:
@@ -689,6 +717,8 @@ class DataFilterView(View):
             filter_text.append(f"🔪 ハンター: {self.filters['hunter']}")
         if self.filters["trait"]:
             filter_text.append(f"⚡ 特質: {self.filters['trait']}")
+        if self.filters["persona"]:
+            filter_text.append(f"🎭 人格: {self.filters['persona']}")
         if self.filters["map"]:
             filter_text.append(f"🗺️ マップ: {self.filters['map']}")
         if self.filters["limit"]:

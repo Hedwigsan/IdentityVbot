@@ -234,11 +234,16 @@ class Database:
                 continue
 
             if map_name not in map_stats:
-                map_stats[map_name] = {"total": 0, "wins": 0}
+                map_stats[map_name] = {"total": 0, "wins": 0, "draws": 0, "losses": 0}
 
             map_stats[map_name]["total"] += 1
-            if m.get("result") == "勝利":
+            result_text = m.get("result")
+            if result_text == "勝利":
                 map_stats[map_name]["wins"] += 1
+            elif result_text in ["辛勝", "平局", "引き分け"]:
+                map_stats[map_name]["draws"] += 1
+            else:
+                map_stats[map_name]["losses"] += 1
 
         result = []
         for map_name, stats in map_stats.items():
@@ -247,6 +252,8 @@ class Database:
                 "map": map_name,
                 "total": stats["total"],
                 "wins": stats["wins"],
+                "draws": stats["draws"],
+                "losses": stats["losses"],
                 "win_rate": f"{win_rate:.1f}%"
             })
 
@@ -431,3 +438,18 @@ class Database:
 
         # 試合数でソート（多い順）
         return sorted(result, key=lambda x: x["total"], reverse=True)
+
+    def get_all_personas(self, user_id: str) -> List[str]:
+        """ユーザーが使用した人格のリストを取得"""
+        response = self.supabase.table("matches")\
+            .select("persona")\
+            .eq("user_id", user_id)\
+            .execute()
+
+        personas = set()
+        for match in response.data:
+            persona = match.get("persona")
+            if persona and persona.strip():
+                personas.add(persona.strip())
+
+        return sorted(list(personas))
