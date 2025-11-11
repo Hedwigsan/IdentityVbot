@@ -52,6 +52,26 @@ MAPS = [
 ]
 
 # インタラクティブUI用のクラス
+class PersonaFilterModal(Modal, title="人格で絞り込み"):
+    """人格フィルター用のモーダル"""
+    persona_input = TextInput(
+        label="人格",
+        placeholder="例: 右下上、左右、オペラ人格 など（空欄で全て）",
+        required=False,
+        max_length=50
+    )
+
+    def __init__(self, filter_view, limit):
+        super().__init__()
+        self.filter_view = filter_view
+        self.limit = limit
+
+    async def on_submit(self, interaction: discord.Interaction):
+        persona = self.persona_input.value.strip() if self.persona_input.value else None
+        self.filter_view.filters["persona"] = persona
+        self.filter_view.filters["limit"] = self.limit
+        await self.filter_view._show_data(interaction)
+
 class PersonaModal(Modal, title="人格を入力"):
     """人格入力用のモーダル"""
     persona_input = TextInput(
@@ -565,9 +585,6 @@ class DataFilterView(View):
             "limit": None
         }
 
-        # 人格リストを取得（最大24個まで）
-        personas = db.get_all_personas(user_id)
-
         # 特質選択 (row 0)
         trait_options = [discord.SelectOption(label="全て", value="all", default=True)]
         trait_options.extend([discord.SelectOption(label=t, value=t) for t in TRAITS])
@@ -580,52 +597,38 @@ class DataFilterView(View):
         trait_select.callback = self.trait_callback
         self.add_item(trait_select)
 
-        # 人格選択 (row 1) - 人格がある場合のみ追加
-        if personas:
-            persona_options = [discord.SelectOption(label="全て", value="all", default=True)]
-            # 最大24個まで（"全て"と合わせて25個がDiscordの上限）
-            persona_options.extend([discord.SelectOption(label=p, value=p) for p in personas[:24]])
-            persona_select = Select(
-                placeholder="🎭 人格を選択",
-                options=persona_options,
-                custom_id="persona_select",
-                row=1
-            )
-            persona_select.callback = self.persona_callback
-            self.add_item(persona_select)
-
-        # マップ選択 (row 2)
+        # マップ選択 (row 1)
         map_options = [discord.SelectOption(label="全て", value="all", default=True)]
         map_options.extend([discord.SelectOption(label=m, value=m) for m in MAPS])
         map_select = Select(
             placeholder="🗺️ マップを選択",
             options=map_options,
             custom_id="map_select",
-            row=2
+            row=1
         )
         map_select.callback = self.map_callback
         self.add_item(map_select)
 
-        # ハンター選択 - 前半 (row 3)
+        # ハンター選択 - 前半 (row 2)
         hunter_p1_options = [discord.SelectOption(label="全て", value="all", default=True)]
         hunter_p1_options.extend([discord.SelectOption(label=h, value=h) for h in HUNTER_CHARACTERS[:23]])
         hunter_p1_select = Select(
             placeholder="🔪 ハンター - 前半",
             options=hunter_p1_options,
             custom_id="hunter_p1_select",
-            row=3
+            row=2
         )
         hunter_p1_select.callback = self.hunter_callback
         self.add_item(hunter_p1_select)
 
-        # ハンター選択 - 後半 (row 4)
+        # ハンター選択 - 後半 (row 3)
         hunter_p2_options = [discord.SelectOption(label="全て", value="all")]
         hunter_p2_options.extend([discord.SelectOption(label=h, value=h) for h in HUNTER_CHARACTERS[23:]])
         hunter_p2_select = Select(
             placeholder="🔪 ハンター - 後半",
             options=hunter_p2_options,
             custom_id="hunter_p2_select",
-            row=4
+            row=3
         )
         hunter_p2_select.callback = self.hunter_callback
         self.add_item(hunter_p2_select)
@@ -646,14 +649,6 @@ class DataFilterView(View):
         except:
             pass
 
-    async def persona_callback(self, interaction: discord.Interaction):
-        value = interaction.data["values"][0]
-        self.filters["persona"] = None if value == "all" else value
-        try:
-            await interaction.response.defer()
-        except:
-            pass
-
     async def map_callback(self, interaction: discord.Interaction):
         value = interaction.data["values"][0]
         self.filters["map"] = None if value == "all" else value
@@ -664,27 +659,35 @@ class DataFilterView(View):
 
     @discord.ui.button(label="📊 最新10戦", style=discord.ButtonStyle.secondary, row=4)
     async def show_10_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        self.filters["limit"] = 10
-        await self._show_data(interaction)
+        # 人格入力モーダルを表示
+        modal = PersonaFilterModal(self, 10)
+        await interaction.response.send_modal(modal)
 
     @discord.ui.button(label="📊 最新50戦", style=discord.ButtonStyle.secondary, row=4)
     async def show_50_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        self.filters["limit"] = 50
-        await self._show_data(interaction)
+        # 人格入力モーダルを表示
+        modal = PersonaFilterModal(self, 50)
+        await interaction.response.send_modal(modal)
 
     @discord.ui.button(label="📊 最新100戦", style=discord.ButtonStyle.secondary, row=4)
     async def show_100_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        self.filters["limit"] = 100
-        await self._show_data(interaction)
+        # 人格入力モーダルを表示
+        modal = PersonaFilterModal(self, 100)
+        await interaction.response.send_modal(modal)
 
     @discord.ui.button(label="📊 全て表示", style=discord.ButtonStyle.primary, row=4)
     async def show_all_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        self.filters["limit"] = None
-        await self._show_data(interaction)
+        # 人格入力モーダルを表示
+        modal = PersonaFilterModal(self, None)
+        await interaction.response.send_modal(modal)
 
     async def _show_data(self, interaction: discord.Interaction):
         """データを取得して表示"""
-        await interaction.response.defer()
+        # モーダルから呼ばれる場合は既に応答済み
+        try:
+            await interaction.response.defer()
+        except:
+            pass
 
         # フィルター適用してデータ取得
         matches = db.get_filtered_matches(self.user_id, self.filters)
