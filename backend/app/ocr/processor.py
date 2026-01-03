@@ -14,9 +14,10 @@ except ImportError:
     DocumentAnalyzer = None  # type: ignore
 
 class OCRProcessor:
-    def __init__(self, use_yomitoku=True):
+    def __init__(self, use_yomitoku=True, templates_path: str = None):
         self.use_yomitoku = use_yomitoku and YOMITOKU_AVAILABLE
         self.reader = None  # easyocrのreaderを初期化
+        self.templates_path = templates_path or "templates/icons"
 
         if self.use_yomitoku:
             try:
@@ -32,7 +33,7 @@ class OCRProcessor:
             if not YOMITOKU_AVAILABLE:
                 print("[WARNING] yomitoku not installed. Using easyocr")
             self.reader = easyocr.Reader(['ja', 'en'], gpu=False)
-        
+
         # キャラアイコンのテンプレート画像（必須）
         self.survivor_templates = {}  # サバイバーアイコン
         self.hunter_templates = {}    # ハンターアイコン
@@ -56,7 +57,7 @@ class OCRProcessor:
     
     def _load_icon_templates(self):
         """キャラアイコンのテンプレート画像を読み込み（必須）"""
-        base_dir = Path("templates/icons")
+        base_dir = Path(self.templates_path)
 
         # サバイバーアイコンを読み込み
         survivor_dir = base_dir / "survivors"
