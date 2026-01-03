@@ -1,186 +1,89 @@
-# 第五人格 ハンター戦績Bot
+# Identity Archive
 
-Discord Bot + Supabase で動作する第五人格（Identity V）のハンター戦績管理ツール
+第五人格（Identity V）ハンター戦績管理システム
 
 試合結果のスクリーンショットをアップロードするだけで、OCRで自動解析してデータベースに保存。統計データで戦績を可視化します。
 
 ## 特徴
 
-### 📸 自動記録・OCR解析
+### 自動記録・OCR解析
 - **試合結果のスクショをアップロードするだけ**で自動でデータ化
 - **OCRで自動解析**: マップ、試合結果、試合時間、サバイバーキャラ、牽制時間、解読進捗など
 - **ハンター自動検出**: 画像認識でハンターを自動識別
-- **複数画像対応**: 一度に複数の試合を記録可能
-- **モバイル対応UI**: スマホでも使いやすい選択メニュー形式
 
-### 📊 豊富な統計・分析機能
+### 豊富な統計・分析機能
 - **全体統計**: 勝率、総試合数
-- **データ絞り込み**: ハンター、特質、マップで条件指定
+- **データ絞り込み**: ハンター、マップ、結果で条件指定
 - **サバイバー統計**: ピック数、勝率
 - **牽制時間分析**: サバイバーごとの平均牽制時間（ハンター別も可）
 - **マップ勝率**: マップごとの戦績（ハンター別も可）
-- **試合履歴**: 最新5戦の詳細データ
-- **件数選択**: 最新10/50/100戦、または全期間から選択可能
+- **試合履歴**: 詳細データの閲覧・削除
 
 ---
 
-## 🚀 使い方（一般ユーザー向け）
+## 技術スタック
 
-### 1. Botをサーバーに招待
+### バックエンド
+- **FastAPI** (Python 3.11+)
+- **Supabase** (PostgreSQL + 認証)
+- **yomitoku / easyocr** (OCR処理)
+- **OpenCV** (画像処理・テンプレートマッチング)
 
-以下の招待リンクからBotをあなたのDiscordサーバーに追加してください：
-
-**[Botを招待する](<招待リンク>)**
-
-または、サーバー管理者に招待を依頼してください。
-
-### 2. 使い方
-
-#### 基本的な流れ
-
-1. **試合を終える**
-2. **結果画面のスクリーンショットを撮る**
-3. **Discordで `!record` コマンドと画像を送信**
-4. **選択メニューで特質・Ban・人格を入力**
-5. **統計コマンドでデータを確認**
-
-#### コマンド一覧
-
-##### 📸 試合記録
-```
-!record (または !r)
-```
-- 画像を添付必須（複数枚可）
-- 画像解析中に選択メニューで入力可能
-- ハンターは自動検出
-- 特質・Ban（最大3人）・人格を選択
-
-**使用例**:
-1. `!record` と入力して画像を添付
-2. 特質を選択（リッスン、異常など）
-3. Banキャラを選択（前半・後半リストから最大3人）
-4. 「確定して人格を入力」ボタンをクリック
-5. 人格を入力（例: 中治り、左右など）
-
-##### 📊 データ閲覧
-```
-!view (または !v)
-```
-- 条件を絞り込んでデータを表示
-- ハンター、特質、マップで絞り込み
-- 表示件数を選択（10/50/100/全て）
-
-##### 📈 統計コマンド
-
-```
-!stats (または !s)
-全体統計（勝率、総試合数）
-
-!survivor_stats (または !ss)
-サバイバーキャラごとのピック数
-→ 件数選択ボタンで集計範囲を指定
-
-!winrate_stats (または !ws)
-サバイバーキャラごとの勝率
-→ 件数選択ボタンで集計範囲を指定
-→ 勝率で色分け表示（🟢60%以上、🟡40-60%、🔴40%未満）
-
-!kite_stats (または !ks)
-サバイバーごとの平均牽制時間
-→ ハンター選択 → 件数選択で集計範囲を指定
-
-!map_stats (または !ms)
-マップごとの勝率
-→ ハンター選択 → 件数選択で集計範囲を指定
-
-!history (または !h)
-最新5戦の試合履歴（固定）
-→ サバイバー全員の名前を表示
-```
-
-##### ℹ️ その他
-```
-!help
-コマンド一覧を表示
-```
-
-#### 統計確認の例
-
-```
-!winrate_stats
-↓
-「📊 最新50戦」ボタンをクリック
-↓
-📊 サバイバーキャラごとの勝率 (最新50戦)
-1. 医師: 🟢 75.0% (6勝2敗 / 8戦)
-2. 祭司: 🟡 50.0% (3勝3敗 / 6戦)
-...
-```
-
-### よくある質問
-
-**Q: OCRが正しく認識しないことがあります**
-- できるだけ高解像度でスクショを撮ってください
-- 結果画面のアニメーションが完全に終わってから撮影してください
-- 画面全体を撮影し、部分的な切り取りは避けてください
-
-**Q: データは他の人と共有されますか？**
-- いいえ、あなたのデータはあなたのDiscordアカウントにのみ紐付けられ、他のユーザーからは見えません
-
-**Q: 過去の試合を削除できますか？**
-- 現在は削除機能はありません（将来的に対応予定）
+### フロントエンド
+- **React 18** + TypeScript
+- **Vite** (ビルドツール)
+- **Chakra UI** (UIライブラリ)
+- **TanStack Query** (データフェッチ)
+- **React Router** (ルーティング)
 
 ---
 
-## 🛠️ セットアップ（開発者・ホスティング担当者向け）
+## プロジェクト構成
 
-このセクションは、Botを自分でホスティングする場合の手順です。一般ユーザーは読む必要はありません。
+```
+IdentityArchive/
+├── backend/
+│   ├── app/
+│   │   ├── main.py              # FastAPIエントリーポイント
+│   │   ├── config.py            # 環境変数設定
+│   │   ├── database.py          # Supabase接続
+│   │   ├── auth/                # 認証（Google OAuth）
+│   │   ├── matches/             # 試合CRUD
+│   │   ├── stats/               # 統計
+│   │   ├── ocr/                 # OCR処理
+│   │   └── master_data.py       # マスターデータ
+│   ├── templates/icons/         # アイコンテンプレート
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── components/          # Reactコンポーネント
+│   │   ├── pages/               # ページコンポーネント
+│   │   ├── hooks/               # カスタムフック
+│   │   ├── services/            # API通信
+│   │   └── types/               # 型定義
+│   └── package.json
+└── templates/icons/             # OCRテンプレート画像
+```
+
+---
+
+## セットアップ
 
 ### 必要なもの
+- Python 3.11以上
+- Node.js 18以上
+- Supabaseアカウント
 
-- Python 3.9以上
-- Discordアカウント
-- Supabaseアカウント（無料プラン可）
-- サーバー環境（VPS、クラウドサービスなど）
+### 1. Supabase設定
 
-### 1. Discord Bot作成
-
-1. [Discord Developer Portal](https://discord.com/developers/applications) にアクセス
-2. 「New Application」をクリック
-3. Bot名を入力（例: 第五人格戦績Bot）
-4. 左メニュー「Bot」→「Add Bot」
-5. 「TOKEN」をコピー（後で使用）
-6. 「Privileged Gateway Intents」で以下を有効化:
-   - ✅ MESSAGE CONTENT INTENT
-7. 左メニュー「OAuth2」→「URL Generator」
-8. SCOPES: `bot`
-9. BOT PERMISSIONS:
-   - `Send Messages`
-   - `Read Messages/View Channels`
-   - `Attach Files`
-   - `Embed Links`
-   - `Read Message History`
-10. 生成されたURLを保存（ユーザーへの招待リンクとして使用）
-
-### 2. Supabase プロジェクト作成
-
-1. [Supabase](https://supabase.com) にアクセスしてアカウント作成
-2. 「New Project」をクリック
-3. プロジェクト名、データベースパスワードを設定
-4. リージョンを選択（`Northeast Asia (Tokyo)` 推奨）
-5. 作成完了後、Settings → API から以下を取得:
-   - `URL`
-   - `service_role` キー（**重要**: anonキーではなくservice_roleキー）
-
-### 3. Supabase テーブル作成
-
-SQL Editorで以下のSQLを実行:
+1. [Supabase](https://supabase.com)でプロジェクト作成
+2. SQL Editorで以下を実行:
 
 ```sql
 -- matchesテーブル
 CREATE TABLE matches (
     id BIGSERIAL PRIMARY KEY,
-    user_id TEXT NOT NULL,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     match_date TIMESTAMPTZ DEFAULT NOW(),
     played_at TIMESTAMPTZ,
     result TEXT NOT NULL,
@@ -207,168 +110,108 @@ CREATE TABLE survivors (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- インデックス
-CREATE INDEX idx_matches_user_id ON matches(user_id);
-CREATE INDEX idx_matches_date ON matches(match_date DESC);
-CREATE INDEX idx_matches_played_at ON matches(played_at DESC);
-CREATE INDEX idx_matches_result ON matches(result);
-CREATE INDEX idx_survivors_match ON survivors(match_id);
-CREATE INDEX idx_survivors_character ON survivors(character_name);
-```
-
-**RLSを有効化する場合**（オプション）:
-```sql
--- RLSを有効化
+-- RLS設定
 ALTER TABLE matches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE survivors ENABLE ROW LEVEL SECURITY;
 
--- service_roleキーを使用する場合、ポリシーは不要
+CREATE POLICY "Users can manage own matches" ON matches
+    FOR ALL USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can manage own survivors" ON survivors
+    FOR ALL USING (
+        EXISTS (SELECT 1 FROM matches WHERE matches.id = survivors.match_id AND matches.user_id = auth.uid())
+    );
+
+-- インデックス
+CREATE INDEX idx_matches_user_id ON matches(user_id);
+CREATE INDEX idx_matches_date ON matches(match_date DESC);
+CREATE INDEX idx_survivors_match ON survivors(match_id);
 ```
 
-### 4. ローカルセットアップ（開発・テスト用）
+3. Authentication → Providers で Google OAuth を設定
+
+### 2. バックエンド
 
 ```bash
-# 1. リポジトリをクローン
-git clone <your-repo>
-cd IdentityArchive
+cd backend
 
-# 2. 仮想環境作成（推奨）
+# 仮想環境作成
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 
-# 3. 依存パッケージインストール
+# 依存パッケージ
 pip install -r requirements.txt
 
-# 4. 環境変数設定
-# .env ファイルを作成して以下を記入:
-DISCORD_BOT_TOKEN=<DiscordのBotトークン>
+# 環境変数 (.env)
 SUPABASE_URL=<SupabaseのURL>
 SUPABASE_KEY=<Supabaseのservice_roleキー>
+FRONTEND_URL=http://localhost:5173
 
-# 5. Bot起動
-python bot.py
+# 起動
+uvicorn app.main:app --reload
 ```
 
-成功すると以下のメッセージが表示されます：
-```
-✅ <BotName> がログインしました！
-Bot ID: <ID>
----------------------------
-```
-
-### 5. サーバーでの常時稼働
-
-#### systemd（Linux）を使用する場合
-
-`/etc/systemd/system/identityv-bot.service` を作成:
-
-```ini
-[Unit]
-Description=Identity V Hunter Stats Discord Bot
-After=network.target
-
-[Service]
-Type=simple
-User=<ユーザー名>
-WorkingDirectory=/path/to/IdentityArchive
-Environment="PATH=/path/to/IdentityArchive/venv/bin"
-ExecStart=/path/to/IdentityArchive/venv/bin/python bot.py
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-起動:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable identityv-bot
-sudo systemctl start identityv-bot
-sudo systemctl status identityv-bot
-```
-
-#### tmux/screenを使用する場合
+### 3. フロントエンド
 
 ```bash
-# tmuxセッション作成
-tmux new -s identityv-bot
+cd frontend
 
-# Bot起動
-cd /path/to/IdentityArchive
-source venv/bin/activate
-python bot.py
+# 依存パッケージ
+npm install
 
-# デタッチ: Ctrl+B → D
-# 再アタッチ: tmux attach -t identityv-bot
+# 環境変数 (.env)
+VITE_API_URL=http://localhost:8000
+
+# 開発サーバー起動
+npm run dev
 ```
 
-#### クラウドサービス（Render、Railway等）を使用する場合
+### 4. アクセス
 
-1. GitHubリポジトリにプッシュ
-2. クラウドサービスでプロジェクトを接続
-3. 環境変数を設定:
-   - `DISCORD_BOT_TOKEN`
-   - `SUPABASE_URL`
-   - `SUPABASE_KEY`
-4. ビルドコマンド: `pip install -r requirements.txt`
-5. 起動コマンド: `python bot.py`
-6. デプロイ
-
-### トラブルシューティング
-
-#### Botが応答しない
-- `.env` ファイルの設定を確認
-- `MESSAGE CONTENT INTENT` が有効か確認
-- Botがサーバーに招待されているか確認
-- コンソールのエラーログを確認
-
-#### データが保存されない
-- Supabaseのテーブルが正しく作成されているか確認
-- `SUPABASE_KEY` が**service_roleキー**であることを確認（anonキーではない）
-- RLSが有効化されている場合、service_roleキーを使用
-
-#### メモリ不足
-- サーバーのメモリを増やす
-- 不要なプロセスを終了する
+- フロントエンド: http://localhost:5173
+- バックエンドAPI: http://localhost:8000
+- APIドキュメント: http://localhost:8000/docs
 
 ---
 
-## 技術スタック
+## API エンドポイント
 
-- **言語**: Python 3.9+
-- **ライブラリ**:
-  - `discord.py`: Discord Bot フレームワーク
-  - `yomitoku`: 日本語OCRライブラリ
-  - `opencv-python`: 画像処理
-  - `supabase`: Supabaseクライアント
-  - `python-dotenv`: 環境変数管理
-- **データベース**: Supabase (PostgreSQL)
-- **ホスティング**: VPS、クラウドサービス（Render、Railway等）
+### 認証
+| メソッド | パス | 説明 |
+|----------|------|------|
+| POST | `/auth/login` | Google OAuth開始 |
+| POST | `/auth/token` | トークン交換 |
+| GET | `/auth/me` | 現在のユーザー情報 |
+| POST | `/auth/logout` | ログアウト |
 
-## プロジェクト構成
+### 試合記録
+| メソッド | パス | 説明 |
+|----------|------|------|
+| POST | `/api/matches/analyze` | 画像アップロード→OCR解析 |
+| POST | `/api/matches` | 試合データ保存 |
+| GET | `/api/matches` | 試合一覧（フィルタ対応） |
+| GET | `/api/matches/{id}` | 試合詳細 |
+| DELETE | `/api/matches/{id}` | 試合削除 |
 
-```
-IdentityArchive/
-├── bot.py              # Discord Bot メインファイル
-├── database.py         # Supabaseデータベース操作
-├── ocr_processor.py    # OCR画像解析処理
-├── requirements.txt    # 依存パッケージ
-├── .env               # 環境変数（要作成、.gitignoreに追加済み）
-├── .gitignore
-└── README.md
-```
+### 統計
+| メソッド | パス | 説明 |
+|----------|------|------|
+| GET | `/api/stats/overall` | 全体統計 |
+| GET | `/api/stats/survivors/picks` | サバイバーピック数 |
+| GET | `/api/stats/survivors/winrate` | サバイバー勝率 |
+| GET | `/api/stats/survivors/kite` | 平均牽制時間 |
+| GET | `/api/stats/maps` | マップ勝率 |
+
+### マスターデータ
+| メソッド | パス | 説明 |
+|----------|------|------|
+| GET | `/api/master/hunters` | ハンター一覧 |
+| GET | `/api/master/survivors` | サバイバー一覧 |
+| GET | `/api/master/traits` | 特質一覧 |
+| GET | `/api/master/maps` | マップ一覧 |
+
+---
 
 ## ライセンス
 
 MIT License
-
-## 貢献
-
-プルリクエストを歓迎します！バグ報告や機能要望はIssueでお願いします。
-
----
-
-## 連絡先
-
-問題や質問がある場合は、Issueを作成するか、Discordサーバーでお問い合わせください。

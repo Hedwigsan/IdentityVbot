@@ -96,3 +96,14 @@ templates/
 # Icon organization
 organize_icons.py
 run_bot.py
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Frontend build
+frontend/dist/
+frontend/.vite/
