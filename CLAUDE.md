@@ -13,11 +13,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 cd backend
 
-# 起動
-venv/Scripts/python.exe -m uvicorn app.main:app --reload
+# 起動（シンプル版 - システムのPython使用）
+python -m uvicorn app.main:app --reload
+
+# バックグラウンド起動（推奨）
+python -m uvicorn app.main:app --reload &
+
+# PowerShellで仮想環境を明示的に使う場合
+.\venv\Scripts\Activate.ps1
+python -m uvicorn app.main:app --reload
 
 # 依存パッケージインストール
-venv/Scripts/python.exe -m pip install -r requirements.txt
+pip install -r requirements.txt
 ```
 
 ### フロントエンド（React + Vite）
@@ -47,7 +54,34 @@ FRONTEND_URL=http://localhost:5173
 **frontend/.env**:
 ```
 VITE_API_URL=http://localhost:8000
+VITE_SUPABASE_URL=<SupabaseプロジェクトURL>
+VITE_SUPABASE_ANON_KEY=<Supabaseのanonキー>
 ```
+
+### ネットワークアクセス設定（モバイル実機テスト用）
+
+スマートフォンなどの実機でテストする場合：
+
+1. **バックエンド**: `--host 0.0.0.0`オプションで起動
+   ```bash
+   python -m uvicorn app.main:app --reload --host 0.0.0.0
+   ```
+
+2. **フロントエンド**: `vite.config.ts`で`host: true`が設定済み（全ネットワークインターフェースでリッスン）
+
+3. **環境変数**: `frontend/.env`の`VITE_API_URL`をPCのIPアドレスに変更
+   ```
+   VITE_API_URL=http://192.168.x.x:8000
+   ```
+
+4. **CORS設定**: `backend/app/main.py`のCORS allow_originsにネットワークIPを追加済み
+
+5. **Supabase設定**: Supabase Dashboard → Authentication → URL Configuration で、ネットワークIPのリダイレクトURLを追加
+   ```
+   http://192.168.x.x:5173/auth/callback
+   ```
+
+6. **注意**: 環境変数を変更した場合、Viteサーバーを再起動する必要があります
 
 ## アーキテクチャ
 
@@ -151,11 +185,18 @@ POST /api/matches（保存）
 
 ## 認証フロー
 
-1. フロントエンド: `authApi.login()` → バックエンドからSupabase OAuth URLを取得
-2. ユーザー: Googleログイン
-3. コールバック: `/auth/callback?code=xxx`
-4. フロントエンド: `authApi.exchangeToken(code)` → access_token取得
-5. 以降: `Authorization: Bearer <token>` ヘッダーで認証
+フロントエンドはSupabase Clientを直接使用してOAuth認証を実行：
+
+1. `useAuth.ts`: `supabase.auth.signInWithOAuth({ provider: 'google' })`を呼び出し
+2. `redirectTo`は`window.location.origin + '/auth/callback'`で動的に生成
+3. Googleログイン後、Supabaseが`/auth/callback`にリダイレクト
+4. `AuthCallbackPage.tsx`: `supabase.auth.getSession()`でセッション取得
+5. セッションから`access_token`を取得し`localStorage`に保存
+6. 以降のAPI呼び出し: `Authorization: Bearer <token>` ヘッダーで認証
+
+**重要**: Supabase DashboardのAuthentication → URL ConfigurationでリダイレクトURLを設定すること
+- 開発時: `http://localhost:5173/auth/callback`
+- 実機テスト時: `http://[PCのIP]:5173/auth/callback`も追加
 
 ## 開発時の注意点
 
@@ -170,6 +211,12 @@ POST /api/matches（保存）
 - TanStack Queryのキャッシュ: `queryKey`でキャッシュが決まる
 - 認証状態は`useAuth`フックで管理、`localStorage`にトークン保存
 - Chakra UIのカラーモード: `useColorModeValue`でライト/ダーク対応
+- レスポンシブデザイン: Chakra UIの`display={{ base: '...', md: '...' }}`でブレークポイント対応
+  - `base`: モバイル（0px～）
+  - `md`: タブレット以上（768px～）
+  - Header.tsxではスマホ用にDrawerメニュー、タブレット以上で通常ナビゲーションを表示
+- フォント: Open Sans（Google Fonts経由、`theme.ts`で設定）
+- 新しいChakra UIコンポーネントを使用する場合、`@chakra-ui/icons`などの追加パッケージが必要な場合がある
 
 ## Conversation Guidelines
 

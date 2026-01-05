@@ -23,7 +23,15 @@ export function SurvivorWinrateTable({ data }: SurvivorWinrateTableProps) {
 
   return (
     <Box overflowX="auto">
-      <Table variant="simple" size="sm">
+      <Table
+        variant="simple"
+        size="sm"
+        sx={{
+          'th, td': {
+            borderBottom: 'none !important',
+          },
+        }}
+      >
         <Thead>
           <Tr>
             <Th>サバイバー</Th>

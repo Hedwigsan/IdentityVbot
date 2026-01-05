@@ -352,7 +352,7 @@ class OCRProcessor:
             if y_center < 0.4:  # 画面上部40%以内に拡張
                 # 相打ちを最初にチェック（「打」を含むため）
                 if "相打" in text or text == "相":
-                    match_data["result"] = "相打ち"
+                    match_data["result"] = "引き分け"  # フロントエンドで「引き分け」として扱う
                     print(f"  [DETECTED] Draw (from: '{text}')")
                 elif "勝利" in text or text == "勝":
                     match_data["result"] = "勝利"
@@ -388,12 +388,25 @@ class OCRProcessor:
                     # 有効な日時かチェック（時刻は試合開始時刻なので広範囲）
                     if 1 <= month <= 12 and 1 <= day <= 31 and 0 <= hour <= 23 and 0 <= minute <= 59:
                         from datetime import datetime
-                        # 現在の年を使用
-                        current_year = datetime.now().year
+                        # 現在日時を取得
+                        now = datetime.now()
+                        current_year = now.year
+
                         try:
-                            played_datetime = datetime(current_year, month, day, hour, minute)
+                            from datetime import timezone, timedelta
+                            # 日本時間（JST = UTC+9）のタイムゾーン
+                            jst = timezone(timedelta(hours=9))
+
+                            # まず現在の年で試す（JST）
+                            played_datetime = datetime(current_year, month, day, hour, minute, tzinfo=jst)
+
+                            # もし未来の日付になってしまった場合は、前年を使う
+                            now_jst = now.replace(tzinfo=jst)
+                            if played_datetime > now_jst:
+                                played_datetime = datetime(current_year - 1, month, day, hour, minute, tzinfo=jst)
+
                             match_data["played_at"] = played_datetime.isoformat()
-                            print(f"  [DATETIME] {month}/{day} {hour}:{minute:02d}")
+                            print(f"  [DATETIME] {played_datetime.year}/{month}/{day} {hour}:{minute:02d} JST")
                         except ValueError:
                             pass  # 無効な日付の場合はスキップ
                     break

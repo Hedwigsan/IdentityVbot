@@ -8,13 +8,24 @@ class StatsService:
     def __init__(self):
         self.supabase = get_supabase()
 
-    def get_overall_stats(self, user_id: str) -> Dict:
+    def get_overall_stats(self, user_id: str, hunter: str = None, persona: str = None, banned_characters: List[str] = None) -> Dict:
         """全体統計"""
-        response = self.supabase.table("matches")\
+        query = self.supabase.table("matches")\
             .select("*")\
-            .eq("user_id", user_id)\
-            .execute()
+            .eq("user_id", user_id)
 
+        if hunter:
+            query = query.eq("hunter_character", hunter)
+
+        if persona:
+            query = query.eq("persona", persona)
+
+        if banned_characters:
+            # banned_charactersはJSON配列として格納されているため、contains演算子を使用
+            for banned_char in banned_characters:
+                query = query.contains("banned_characters", [banned_char])
+
+        response = query.execute()
         matches = response.data
         total = len(matches)
         wins = 0
@@ -38,13 +49,23 @@ class StatsService:
             "win_rate": f"{(wins/total*100):.1f}%" if total > 0 else "0%"
         }
 
-    def get_survivor_pick_rates(self, user_id: str, limit: int = None) -> List[Dict]:
+    def get_survivor_pick_rates(self, user_id: str, hunter: str = None, limit: int = None, persona: str = None, banned_characters: List[str] = None) -> List[Dict]:
         """サバイバーキャラごとのピック回数"""
         # 最新のmatch_idを取得
         matches_query = self.supabase.table("matches")\
             .select("id")\
             .eq("user_id", user_id)\
             .order("match_date", desc=True)
+
+        if hunter:
+            matches_query = matches_query.eq("hunter_character", hunter)
+
+        if persona:
+            matches_query = matches_query.eq("persona", persona)
+
+        if banned_characters:
+            for banned_char in banned_characters:
+                matches_query = matches_query.contains("banned_characters", [banned_char])
 
         if limit:
             matches_query = matches_query.limit(limit)
@@ -76,13 +97,23 @@ class StatsService:
 
         return result
 
-    def get_survivor_winrate(self, user_id: str, limit: int = None) -> List[Dict]:
+    def get_survivor_winrate(self, user_id: str, hunter: str = None, limit: int = None, persona: str = None, banned_characters: List[str] = None) -> List[Dict]:
         """サバイバーキャラごとの勝率"""
         # 最新のmatch_idを取得
         matches_query = self.supabase.table("matches")\
             .select("id, result")\
             .eq("user_id", user_id)\
             .order("match_date", desc=True)
+
+        if hunter:
+            matches_query = matches_query.eq("hunter_character", hunter)
+
+        if persona:
+            matches_query = matches_query.eq("persona", persona)
+
+        if banned_characters:
+            for banned_char in banned_characters:
+                matches_query = matches_query.contains("banned_characters", [banned_char])
 
         if limit:
             matches_query = matches_query.limit(limit)
@@ -136,10 +167,10 @@ class StatsService:
                 "win_rate_str": f"{win_rate:.1f}%"
             })
 
-        # 試合数でソート（多い順）
-        return sorted(result, key=lambda x: x["total"], reverse=True)
+        # 勝率でソート（高い順）
+        return sorted(result, key=lambda x: x["win_rate"], reverse=True)
 
-    def get_avg_kite_time(self, user_id: str, hunter: str = None, limit: int = None) -> List[Dict]:
+    def get_avg_kite_time(self, user_id: str, hunter: str = None, limit: int = None, persona: str = None, banned_characters: List[str] = None) -> List[Dict]:
         """サバイバーキャラごとの平均牽制時間"""
         # 最新のmatch_idを取得
         matches_query = self.supabase.table("matches")\
@@ -149,6 +180,13 @@ class StatsService:
 
         if hunter:
             matches_query = matches_query.eq("hunter_character", hunter)
+
+        if persona:
+            matches_query = matches_query.eq("persona", persona)
+
+        if banned_characters:
+            for banned_char in banned_characters:
+                matches_query = matches_query.contains("banned_characters", [banned_char])
 
         if limit:
             matches_query = matches_query.limit(limit)
@@ -198,7 +236,7 @@ class StatsService:
 
         return sorted(result, key=lambda x: float(x["avg_kite_time"].replace("s", "")), reverse=True)
 
-    def get_map_stats(self, user_id: str, hunter: str = None, limit: int = None) -> List[Dict]:
+    def get_map_stats(self, user_id: str, hunter: str = None, limit: int = None, persona: str = None, banned_characters: List[str] = None) -> List[Dict]:
         """マップごとの勝率"""
         query = self.supabase.table("matches")\
             .select("*")\
@@ -207,6 +245,13 @@ class StatsService:
 
         if hunter:
             query = query.eq("hunter_character", hunter)
+
+        if persona:
+            query = query.eq("persona", persona)
+
+        if banned_characters:
+            for banned_char in banned_characters:
+                query = query.contains("banned_characters", [banned_char])
 
         if limit:
             query = query.limit(limit)
@@ -246,6 +291,29 @@ class StatsService:
             })
 
         return sorted(result, key=lambda x: x["total"], reverse=True)
+
+    def get_recent_personas(self, user_id: str, limit: int = 10) -> List[str]:
+        """最近使用した人格リストを取得"""
+        response = self.supabase.table("matches")\
+            .select("persona")\
+            .eq("user_id", user_id)\
+            .not_.is_("persona", "null")\
+            .order("match_date", desc=True)\
+            .limit(50)\
+            .execute()
+
+        # 重複を除いて最新limit件を返す
+        personas = []
+        seen = set()
+        for m in response.data:
+            persona = m.get("persona")
+            if persona and persona not in seen:
+                personas.append(persona)
+                seen.add(persona)
+            if len(personas) >= limit:
+                break
+
+        return personas
 
 
 # シングルトンインスタンス

@@ -137,7 +137,12 @@ cd backend
 
 # 仮想環境作成
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# Windows PowerShell: 仮想環境アクティベート
+.\venv\Scripts\Activate.ps1
+
+# Linux/Mac: 仮想環境アクティベート
+source venv/bin/activate
 
 # 依存パッケージ
 pip install -r requirements.txt
@@ -147,8 +152,11 @@ SUPABASE_URL=<SupabaseのURL>
 SUPABASE_KEY=<Supabaseのservice_roleキー>
 FRONTEND_URL=http://localhost:5173
 
-# 起動
-uvicorn app.main:app --reload
+# 起動（シンプル版 - システムまたは仮想環境のPythonを使用）
+python -m uvicorn app.main:app --reload
+
+# バックグラウンド起動の場合
+python -m uvicorn app.main:app --reload &
 ```
 
 ### 3. フロントエンド

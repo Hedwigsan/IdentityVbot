@@ -87,6 +87,7 @@ export function MatchEditor({ analyzeResult, onSave, onCancel }: MatchEditorProp
       trait_used: traitUsed || undefined,
       persona: persona || undefined,
       banned_characters: bannedCharacters.length > 0 ? bannedCharacters : undefined,
+      played_at: analyzeResult.played_at,
       survivors,
     };
     onSave(data);

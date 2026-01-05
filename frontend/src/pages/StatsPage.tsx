@@ -13,6 +13,13 @@ import {
   HStack,
   FormControl,
   FormLabel,
+  Input,
+  Button,
+  Tag,
+  TagLabel,
+  TagCloseButton,
+  Wrap,
+  WrapItem,
 } from '@chakra-ui/react';
 import { useQuery } from '@tanstack/react-query';
 import { statsApi, masterApi } from '../services/api';
@@ -25,36 +32,96 @@ import { MapStatsTable } from '../components/stats/MapStatsTable';
 export function StatsPage() {
   const [limit, setLimit] = useState<number | undefined>(undefined);
   const [hunterFilter, setHunterFilter] = useState<string>('');
+  const [personaFilter, setPersonaFilter] = useState<string>('');
+  const [customPersonaInput, setCustomPersonaInput] = useState<string>('');
+  const [customPersona, setCustomPersona] = useState<string>('');
+  const [bannedCharacters, setBannedCharacters] = useState<string[]>([]);
+  const [selectedBanChar, setSelectedBanChar] = useState<string>('');
+
+  // 使用する人格フィルタ（カスタム入力があればそれを優先）
+  const activePersona = customPersona || personaFilter || undefined;
 
   const { data: overall, isLoading: loadingOverall } = useQuery({
-    queryKey: ['stats', 'overall'],
-    queryFn: statsApi.getOverall,
+    queryKey: ['stats', 'overall', hunterFilter, activePersona, bannedCharacters],
+    queryFn: () => statsApi.getOverall(
+      hunterFilter || undefined,
+      activePersona,
+      bannedCharacters.length > 0 ? bannedCharacters : undefined
+    ),
   });
 
   const { data: picks, isLoading: loadingPicks } = useQuery({
-    queryKey: ['stats', 'picks', limit],
-    queryFn: () => statsApi.getSurvivorPicks(limit),
+    queryKey: ['stats', 'picks', hunterFilter, limit, activePersona, bannedCharacters],
+    queryFn: () => statsApi.getSurvivorPicks(
+      hunterFilter || undefined,
+      limit,
+      activePersona,
+      bannedCharacters.length > 0 ? bannedCharacters : undefined
+    ),
   });
 
   const { data: winrate, isLoading: loadingWinrate } = useQuery({
-    queryKey: ['stats', 'winrate', limit],
-    queryFn: () => statsApi.getSurvivorWinrate(limit),
+    queryKey: ['stats', 'winrate', hunterFilter, limit, activePersona, bannedCharacters],
+    queryFn: () => statsApi.getSurvivorWinrate(
+      hunterFilter || undefined,
+      limit,
+      activePersona,
+      bannedCharacters.length > 0 ? bannedCharacters : undefined
+    ),
   });
 
   const { data: kite, isLoading: loadingKite } = useQuery({
-    queryKey: ['stats', 'kite', hunterFilter, limit],
-    queryFn: () => statsApi.getSurvivorKite(hunterFilter || undefined, limit),
+    queryKey: ['stats', 'kite', hunterFilter, limit, activePersona, bannedCharacters],
+    queryFn: () => statsApi.getSurvivorKite(
+      hunterFilter || undefined,
+      limit,
+      activePersona,
+      bannedCharacters.length > 0 ? bannedCharacters : undefined
+    ),
   });
 
   const { data: maps, isLoading: loadingMaps } = useQuery({
-    queryKey: ['stats', 'maps', hunterFilter, limit],
-    queryFn: () => statsApi.getMapStats(hunterFilter || undefined, limit),
+    queryKey: ['stats', 'maps', hunterFilter, limit, activePersona, bannedCharacters],
+    queryFn: () => statsApi.getMapStats(
+      hunterFilter || undefined,
+      limit,
+      activePersona,
+      bannedCharacters.length > 0 ? bannedCharacters : undefined
+    ),
   });
 
   const { data: hunters } = useQuery({
     queryKey: ['hunters'],
     queryFn: masterApi.getHunters,
   });
+
+  const { data: recentPersonas } = useQuery({
+    queryKey: ['recentPersonas'],
+    queryFn: statsApi.getRecentPersonas,
+  });
+
+  const { data: survivors } = useQuery({
+    queryKey: ['survivors'],
+    queryFn: masterApi.getSurvivors,
+  });
+
+  // カスタム人格を適用
+  const handleApplyCustomPersona = () => {
+    setCustomPersona(customPersonaInput);
+  };
+
+  // BANキャラを追加
+  const handleAddBannedChar = () => {
+    if (selectedBanChar && !bannedCharacters.includes(selectedBanChar) && bannedCharacters.length < 3) {
+      setBannedCharacters([...bannedCharacters, selectedBanChar]);
+      setSelectedBanChar('');
+    }
+  };
+
+  // BANキャラを削除
+  const handleRemoveBannedChar = (char: string) => {
+    setBannedCharacters(bannedCharacters.filter((c) => c !== char));
+  };
 
   const isLoading = loadingOverall || loadingPicks || loadingWinrate || loadingKite || loadingMaps;
 
@@ -73,37 +140,150 @@ export function StatsPage() {
       </Heading>
 
       {/* フィルター */}
-      <HStack spacing={4} mb={6}>
-        <FormControl maxW="200px">
-          <FormLabel fontSize="sm">集計対象</FormLabel>
-          <Select
-            size="sm"
-            value={limit || ''}
-            onChange={(e) => setLimit(e.target.value ? parseInt(e.target.value) : undefined)}
-          >
-            <option value="">全試合</option>
-            <option value="10">直近10試合</option>
-            <option value="50">直近50試合</option>
-            <option value="100">直近100試合</option>
-          </Select>
-        </FormControl>
+      <Box mb={6}>
+        <HStack spacing={4} mb={4} flexWrap="wrap">
+          <FormControl maxW="200px">
+            <FormLabel fontSize="sm">集計対象</FormLabel>
+            <Select
+              size="sm"
+              value={limit || ''}
+              onChange={(e) => setLimit(e.target.value ? parseInt(e.target.value) : undefined)}
+              bg="rgba(255, 255, 255, 0.8)"
+              borderColor="white"
+              borderWidth="2px"
+            >
+              <option value="">全試合</option>
+              <option value="10">直近10試合</option>
+              <option value="50">直近50試合</option>
+              <option value="100">直近100試合</option>
+            </Select>
+          </FormControl>
 
-        <FormControl maxW="200px">
-          <FormLabel fontSize="sm">ハンター絞り込み</FormLabel>
-          <Select
-            size="sm"
-            value={hunterFilter}
-            onChange={(e) => setHunterFilter(e.target.value)}
-          >
-            <option value="">全ハンター</option>
-            {hunters?.map((hunter) => (
-              <option key={hunter} value={hunter}>
-                {hunter}
-              </option>
-            ))}
-          </Select>
+          <FormControl maxW="200px">
+            <FormLabel fontSize="sm">ハンター絞り込み</FormLabel>
+            <Select
+              size="sm"
+              value={hunterFilter}
+              onChange={(e) => setHunterFilter(e.target.value)}
+              bg="rgba(255, 255, 255, 0.8)"
+              borderColor="white"
+              borderWidth="2px"
+            >
+              <option value="">全ハンター</option>
+              {hunters?.map((hunter) => (
+                <option key={hunter} value={hunter}>
+                  {hunter}
+                </option>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl maxW="200px">
+            <FormLabel fontSize="sm">人格絞り込み</FormLabel>
+            <Select
+              size="sm"
+              value={personaFilter}
+              onChange={(e) => {
+                setPersonaFilter(e.target.value);
+                if (e.target.value !== 'custom') {
+                  setCustomPersona('');
+                  setCustomPersonaInput('');
+                }
+              }}
+              bg="rgba(255, 255, 255, 0.8)"
+              borderColor="white"
+              borderWidth="2px"
+            >
+              <option value="">全人格</option>
+              {recentPersonas?.map((persona) => (
+                <option key={persona} value={persona}>
+                  {persona}
+                </option>
+              ))}
+              <option value="custom">その他（手入力）</option>
+            </Select>
+          </FormControl>
+
+          {personaFilter === 'custom' && (
+            <>
+              <FormControl maxW="200px">
+                <FormLabel fontSize="sm">人格名入力</FormLabel>
+                <Input
+                  size="sm"
+                  value={customPersonaInput}
+                  onChange={(e) => setCustomPersonaInput(e.target.value)}
+                  placeholder="人格名を入力"
+                  bg="rgba(255, 255, 255, 0.8)"
+                  borderColor="white"
+                  borderWidth="2px"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleApplyCustomPersona();
+                    }
+                  }}
+                />
+              </FormControl>
+              <FormControl maxW="100px" alignSelf="flex-end">
+                <Button
+                  size="sm"
+                  onClick={handleApplyCustomPersona}
+                  colorScheme="blue"
+                  isDisabled={!customPersonaInput}
+                >
+                  適用
+                </Button>
+              </FormControl>
+            </>
+          )}
+        </HStack>
+
+        <FormControl>
+          <FormLabel fontSize="sm">BANキャラ（最大3キャラ）</FormLabel>
+          <HStack spacing={2} mb={2}>
+            <Select
+              size="sm"
+              maxW="200px"
+              value={selectedBanChar}
+              onChange={(e) => setSelectedBanChar(e.target.value)}
+              bg="rgba(255, 255, 255, 0.8)"
+              borderColor="white"
+              borderWidth="2px"
+              isDisabled={bannedCharacters.length >= 3}
+            >
+              <option value="">サバイバーを選択</option>
+              {survivors?.map((survivor) => (
+                <option
+                  key={survivor}
+                  value={survivor}
+                  disabled={bannedCharacters.includes(survivor)}
+                >
+                  {survivor}
+                </option>
+              ))}
+            </Select>
+            <Button
+              size="sm"
+              onClick={handleAddBannedChar}
+              isDisabled={!selectedBanChar || bannedCharacters.length >= 3}
+              colorScheme="blue"
+            >
+              追加
+            </Button>
+          </HStack>
+          {bannedCharacters.length > 0 && (
+            <Wrap spacing={2}>
+              {bannedCharacters.map((char) => (
+                <WrapItem key={char}>
+                  <Tag size="md" colorScheme="red" borderRadius="full">
+                    <TagLabel>{char}</TagLabel>
+                    <TagCloseButton onClick={() => handleRemoveBannedChar(char)} />
+                  </Tag>
+                </WrapItem>
+              ))}
+            </Wrap>
+          )}
         </FormControl>
-      </HStack>
+      </Box>
 
       {/* 全体統計 */}
       {overall && <OverallStatsCard stats={overall} />}

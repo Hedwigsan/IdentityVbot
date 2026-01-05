@@ -1,26 +1,28 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Center, Spinner, Text, VStack } from '@chakra-ui/react';
-import { authApi } from '../services/api';
+import { supabase } from '../lib/supabase';
 
 export function AuthCallbackPage() {
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const handleCallback = async () => {
-      const code = searchParams.get('code');
-
-      if (!code) {
-        setError('認証コードが見つかりません');
-        return;
-      }
-
       try {
-        const { access_token } = await authApi.exchangeToken(code);
-        localStorage.setItem('access_token', access_token);
-        navigate('/record', { replace: true });
+        // SupabaseがURLのハッシュフラグメントからセッションを自動的に処理
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+        if (sessionError) {
+          throw sessionError;
+        }
+
+        if (session) {
+          // セッションが確立されたら、メインページにリダイレクト
+          navigate('/record', { replace: true });
+        } else {
+          setError('認証セッションが見つかりません');
+        }
       } catch (err) {
         console.error('Auth callback error:', err);
         setError('認証に失敗しました');
@@ -28,7 +30,7 @@ export function AuthCallbackPage() {
     };
 
     handleCallback();
-  }, [searchParams, navigate]);
+  }, [navigate]);
 
   if (error) {
     return (

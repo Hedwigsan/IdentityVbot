@@ -110,28 +110,53 @@ export const matchesApi = {
 
 // 統計API
 export const statsApi = {
-  getOverall: async (): Promise<OverallStats> => {
-    const { data } = await api.get('/api/stats/overall');
+  getOverall: async (hunter?: string, persona?: string, bannedCharacters?: string[]): Promise<OverallStats> => {
+    const params: any = { hunter, persona };
+    if (bannedCharacters && bannedCharacters.length > 0) {
+      params.banned_characters = bannedCharacters.join(',');
+    }
+    const { data } = await api.get('/api/stats/overall', { params });
     return data;
   },
 
-  getSurvivorPicks: async (limit?: number): Promise<SurvivorPickStats[]> => {
-    const { data } = await api.get('/api/stats/survivors/picks', { params: { limit } });
+  getSurvivorPicks: async (hunter?: string, limit?: number, persona?: string, bannedCharacters?: string[]): Promise<SurvivorPickStats[]> => {
+    const params: any = { hunter, limit, persona };
+    if (bannedCharacters && bannedCharacters.length > 0) {
+      params.banned_characters = bannedCharacters.join(',');
+    }
+    const { data } = await api.get('/api/stats/survivors/picks', { params });
     return data;
   },
 
-  getSurvivorWinrate: async (limit?: number): Promise<SurvivorWinrateStats[]> => {
-    const { data } = await api.get('/api/stats/survivors/winrate', { params: { limit } });
+  getSurvivorWinrate: async (hunter?: string, limit?: number, persona?: string, bannedCharacters?: string[]): Promise<SurvivorWinrateStats[]> => {
+    const params: any = { hunter, limit, persona };
+    if (bannedCharacters && bannedCharacters.length > 0) {
+      params.banned_characters = bannedCharacters.join(',');
+    }
+    const { data } = await api.get('/api/stats/survivors/winrate', { params });
     return data;
   },
 
-  getSurvivorKite: async (hunter?: string, limit?: number): Promise<SurvivorKiteStats[]> => {
-    const { data } = await api.get('/api/stats/survivors/kite', { params: { hunter, limit } });
+  getSurvivorKite: async (hunter?: string, limit?: number, persona?: string, bannedCharacters?: string[]): Promise<SurvivorKiteStats[]> => {
+    const params: any = { hunter, limit, persona };
+    if (bannedCharacters && bannedCharacters.length > 0) {
+      params.banned_characters = bannedCharacters.join(',');
+    }
+    const { data } = await api.get('/api/stats/survivors/kite', { params });
     return data;
   },
 
-  getMapStats: async (hunter?: string, limit?: number): Promise<MapStats[]> => {
-    const { data } = await api.get('/api/stats/maps', { params: { hunter, limit } });
+  getMapStats: async (hunter?: string, limit?: number, persona?: string, bannedCharacters?: string[]): Promise<MapStats[]> => {
+    const params: any = { hunter, limit, persona };
+    if (bannedCharacters && bannedCharacters.length > 0) {
+      params.banned_characters = bannedCharacters.join(',');
+    }
+    const { data } = await api.get('/api/stats/maps', { params });
+    return data;
+  },
+
+  getRecentPersonas: async (): Promise<string[]> => {
+    const { data } = await api.get('/api/stats/personas');
     return data;
   },
 };

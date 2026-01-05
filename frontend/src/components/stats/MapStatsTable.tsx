@@ -24,7 +24,15 @@ export function MapStatsTable({ data }: MapStatsTableProps) {
 
   return (
     <Box overflowX="auto">
-      <Table variant="simple" size="sm">
+      <Table
+        variant="simple"
+        size="sm"
+        sx={{
+          'th, td': {
+            borderBottom: 'none !important',
+          },
+        }}
+      >
         <Thead>
           <Tr>
             <Th>マップ</Th>

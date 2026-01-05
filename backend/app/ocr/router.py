@@ -56,9 +56,9 @@ async def analyze_image(
                 position=s.get("position"),
                 kite_time=s.get("kite_time"),
                 decode_progress=s.get("decode_progress"),
-                board_hits=s.get("board_hits", 0),
-                rescues=s.get("rescues", 0),
-                heals=s.get("heals", 0)
+                board_hits=s.get("board_hits") or 0,
+                rescues=s.get("rescues") or 0,
+                heals=s.get("heals") or 0
             ))
 
         return AnalyzeResponse(
@@ -101,9 +101,9 @@ async def analyze_multiple_images(
                     position=s.get("position"),
                     kite_time=s.get("kite_time"),
                     decode_progress=s.get("decode_progress"),
-                    board_hits=s.get("board_hits", 0),
-                    rescues=s.get("rescues", 0),
-                    heals=s.get("heals", 0)
+                    board_hits=s.get("board_hits") or 0,
+                    rescues=s.get("rescues") or 0,
+                    heals=s.get("heals") or 0
                 ))
 
             results.append(AnalyzeResponse(

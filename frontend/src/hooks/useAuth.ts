@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '../lib/supabase';
 import { authApi } from '../services/api';
 import type { User } from '../types';
 
@@ -9,21 +10,25 @@ export function useAuth() {
 
   // ユーザー情報を取得
   const fetchUser = useCallback(async () => {
-    const token = localStorage.getItem('access_token');
-    if (!token) {
-      setIsLoading(false);
-      setIsAuthenticated(false);
-      return;
-    }
-
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session) {
+        setIsLoading(false);
+        setIsAuthenticated(false);
+        return;
+      }
+
+      // Supabaseのセッションからアクセストークンを取得
+      const token = session.access_token;
+      localStorage.setItem('access_token', token);
+
+      // バックエンドからユーザー情報を取得
       const userData = await authApi.getMe();
       setUser(userData);
       setIsAuthenticated(true);
-    } catch {
-      // トークンが無効な場合
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
+    } catch (error) {
+      console.error('Fetch user error:', error);
       setIsAuthenticated(false);
     } finally {
       setIsLoading(false);
@@ -32,14 +37,33 @@ export function useAuth() {
 
   useEffect(() => {
     fetchUser();
+
+    // Supabaseの認証状態変更を監視
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        localStorage.setItem('access_token', session.access_token);
+        fetchUser();
+      } else {
+        setUser(null);
+        setIsAuthenticated(false);
+        localStorage.removeItem('access_token');
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, [fetchUser]);
 
-  // ログイン開始
+  // ログイン開始（Supabase Client経由）
   const login = useCallback(async () => {
     try {
-      const callbackUrl = `${window.location.origin}/auth/callback`;
-      const { url } = await authApi.login(callbackUrl);
-      window.location.href = url;
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+
+      if (error) throw error;
     } catch (error) {
       console.error('Login error:', error);
       throw error;
@@ -49,30 +73,15 @@ export function useAuth() {
   // ログアウト
   const logout = useCallback(async () => {
     try {
-      await authApi.logout();
-    } catch {
-      // エラーでも続行
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('Logout error:', error);
     } finally {
       setUser(null);
       setIsAuthenticated(false);
       localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
     }
   }, []);
-
-  // OAuthコールバック処理
-  const handleCallback = useCallback(async (code: string) => {
-    try {
-      const tokens = await authApi.exchangeToken(code);
-      localStorage.setItem('access_token', tokens.access_token);
-      localStorage.setItem('refresh_token', tokens.refresh_token);
-      await fetchUser();
-      return true;
-    } catch (error) {
-      console.error('Callback error:', error);
-      return false;
-    }
-  }, [fetchUser]);
 
   return {
     user,
@@ -80,7 +89,6 @@ export function useAuth() {
     isAuthenticated,
     login,
     logout,
-    handleCallback,
     refetch: fetchUser,
   };
 }

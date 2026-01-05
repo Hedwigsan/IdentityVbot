@@ -155,6 +155,9 @@ export function HistoryPage() {
             size="sm"
             value={resultFilter}
             onChange={(e) => setResultFilter(e.target.value)}
+            bg="rgba(255, 255, 255, 0.8)"
+            borderColor="white"
+            borderWidth="2px"
           >
             <option value="">すべて</option>
             <option value="勝利">勝利</option>
@@ -169,6 +172,9 @@ export function HistoryPage() {
             size="sm"
             value={hunterFilter}
             onChange={(e) => setHunterFilter(e.target.value)}
+            bg="rgba(255, 255, 255, 0.8)"
+            borderColor="white"
+            borderWidth="2px"
           >
             <option value="">すべて</option>
             {hunters?.map((hunter) => (
@@ -185,6 +191,9 @@ export function HistoryPage() {
             size="sm"
             value={mapFilter}
             onChange={(e) => setMapFilter(e.target.value)}
+            bg="rgba(255, 255, 255, 0.8)"
+            borderColor="white"
+            borderWidth="2px"
           >
             <option value="">すべて</option>
             {maps?.map((map) => (
