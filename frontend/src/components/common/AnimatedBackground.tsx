@@ -1,4 +1,5 @@
 import { Box } from '@chakra-ui/react';
+import Squares from './Squares';
 
 export function AnimatedBackground() {
   return (
@@ -11,8 +12,14 @@ export function AnimatedBackground() {
       zIndex={-1}
       overflow="hidden"
       bg="gray.50"
-      backgroundImage="linear-gradient(rgba(200, 200, 200, 0.2) 1px, transparent 1px), linear-gradient(90deg, rgba(200, 200, 200, 0.2) 1px, transparent 1px)"
-      backgroundSize="40px 40px"
-    />
+    >
+      <Squares
+        direction="diagonal"
+        speed={0.1}
+        borderColor="rgba(200, 200, 200, 0.21)"
+        squareSize={40}
+        hoverFillColor="rgba(100, 100, 255, 0.1)"
+      />
+    </Box>
   );
 }

@@ -7,6 +7,8 @@ import {
   VStack,
   Progress,
   useColorModeValue,
+  HStack,
+  Badge,
 } from '@chakra-ui/react';
 import { useDropzone } from 'react-dropzone';
 import { FiUpload } from 'react-icons/fi';
@@ -14,12 +16,13 @@ import { matchesApi } from '../../services/api';
 import type { AnalyzeResponse } from '../../types';
 
 interface ImageUploaderProps {
-  onAnalyzeComplete: (result: AnalyzeResponse) => void;
+  onAnalyzeComplete: (results: AnalyzeResponse[]) => void;
 }
 
 export function ImageUploader({ onAnalyzeComplete }: ImageUploaderProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
 
   const borderColor = useColorModeValue('gray.300', 'gray.600');
   const hoverBg = useColorModeValue('gray.50', 'gray.700');
@@ -28,18 +31,37 @@ export function ImageUploader({ onAnalyzeComplete }: ImageUploaderProps) {
     async (acceptedFiles: File[]) => {
       if (acceptedFiles.length === 0) return;
 
-      const file = acceptedFiles[0];
       setIsAnalyzing(true);
       setError(null);
+      setUploadProgress({ current: 0, total: acceptedFiles.length });
 
       try {
-        const result = await matchesApi.analyze(file);
-        onAnalyzeComplete(result);
+        const results: AnalyzeResponse[] = [];
+
+        for (let i = 0; i < acceptedFiles.length; i++) {
+          const file = acceptedFiles[i];
+          setUploadProgress({ current: i + 1, total: acceptedFiles.length });
+
+          try {
+            const result = await matchesApi.analyze(file);
+            results.push(result);
+          } catch (err) {
+            console.error(`Analyze error for file ${i + 1}:`, err);
+            // 個別のエラーは無視して続行
+          }
+        }
+
+        if (results.length === 0) {
+          setError('すべての画像の解析に失敗しました。もう一度お試しください。');
+        } else {
+          onAnalyzeComplete(results);
+        }
       } catch (err) {
         console.error('Analyze error:', err);
         setError('画像の解析に失敗しました。もう一度お試しください。');
       } finally {
         setIsAnalyzing(false);
+        setUploadProgress({ current: 0, total: 0 });
       }
     },
     [onAnalyzeComplete]
@@ -50,7 +72,7 @@ export function ImageUploader({ onAnalyzeComplete }: ImageUploaderProps) {
     accept: {
       'image/*': ['.png', '.jpg', '.jpeg'],
     },
-    maxFiles: 1,
+    multiple: true,
     disabled: isAnalyzing,
   });
 
@@ -76,10 +98,17 @@ export function ImageUploader({ onAnalyzeComplete }: ImageUploaderProps) {
             </Box>
             {isAnalyzing ? (
               <>
-                <Text fontWeight="medium">解析中...</Text>
+                <HStack spacing={2}>
+                  <Text fontWeight="medium">解析中...</Text>
+                  {uploadProgress.total > 0 && (
+                    <Badge colorScheme="blue">
+                      {uploadProgress.current} / {uploadProgress.total}
+                    </Badge>
+                  )}
+                </HStack>
                 <Progress size="sm" isIndeterminate w="200px" />
                 <Text fontSize="sm" color="gray.500">
-                  5〜15秒かかる場合があります
+                  画像1枚につき5〜15秒かかる場合があります
                 </Text>
               </>
             ) : (
@@ -90,7 +119,7 @@ export function ImageUploader({ onAnalyzeComplete }: ImageUploaderProps) {
                     : '試合結果画像をドロップ、またはクリックして選択'}
                 </Text>
                 <Text fontSize="sm" color="gray.500">
-                  PNG, JPG形式に対応
+                  PNG, JPG形式に対応（複数選択可能）
                 </Text>
               </>
             )}

@@ -63,7 +63,7 @@ export function MatchEditor({ analyzeResult, onSave, onCancel }: MatchEditorProp
   const handleBanToggle = (name: string) => {
     if (bannedCharacters.includes(name)) {
       setBannedCharacters(bannedCharacters.filter((c) => c !== name));
-    } else if (bannedCharacters.length < 4) {
+    } else if (bannedCharacters.length < 3) {
       setBannedCharacters([...bannedCharacters, name]);
     }
   };
@@ -178,8 +178,8 @@ export function MatchEditor({ analyzeResult, onSave, onCancel }: MatchEditorProp
         <CardHeader>
           <HStack justify="space-between">
             <Heading size="md">Banキャラ</Heading>
-            <Badge colorScheme={bannedCharacters.length === 4 ? 'green' : 'gray'}>
-              {bannedCharacters.length}/4
+            <Badge colorScheme={bannedCharacters.length === 3 ? 'green' : 'gray'}>
+              {bannedCharacters.length}/3
             </Badge>
           </HStack>
         </CardHeader>
@@ -191,7 +191,7 @@ export function MatchEditor({ analyzeResult, onSave, onCancel }: MatchEditorProp
                   isChecked={bannedCharacters.includes(survivor)}
                   onChange={() => handleBanToggle(survivor)}
                   isDisabled={
-                    !bannedCharacters.includes(survivor) && bannedCharacters.length >= 4
+                    !bannedCharacters.includes(survivor) && bannedCharacters.length >= 3
                   }
                 >
                   {survivor}

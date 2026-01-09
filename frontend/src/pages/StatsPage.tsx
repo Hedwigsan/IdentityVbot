@@ -32,6 +32,7 @@ import { MapStatsTable } from '../components/stats/MapStatsTable';
 export function StatsPage() {
   const [limit, setLimit] = useState<number | undefined>(undefined);
   const [hunterFilter, setHunterFilter] = useState<string>('');
+  const [traitFilter, setTraitFilter] = useState<string>('');
   const [personaFilter, setPersonaFilter] = useState<string>('');
   const [customPersonaInput, setCustomPersonaInput] = useState<string>('');
   const [customPersona, setCustomPersona] = useState<string>('');
@@ -42,18 +43,20 @@ export function StatsPage() {
   const activePersona = customPersona || personaFilter || undefined;
 
   const { data: overall, isLoading: loadingOverall } = useQuery({
-    queryKey: ['stats', 'overall', hunterFilter, activePersona, bannedCharacters],
+    queryKey: ['stats', 'overall', hunterFilter, traitFilter, activePersona, bannedCharacters],
     queryFn: () => statsApi.getOverall(
       hunterFilter || undefined,
+      traitFilter || undefined,
       activePersona,
       bannedCharacters.length > 0 ? bannedCharacters : undefined
     ),
   });
 
   const { data: picks, isLoading: loadingPicks } = useQuery({
-    queryKey: ['stats', 'picks', hunterFilter, limit, activePersona, bannedCharacters],
+    queryKey: ['stats', 'picks', hunterFilter, traitFilter, limit, activePersona, bannedCharacters],
     queryFn: () => statsApi.getSurvivorPicks(
       hunterFilter || undefined,
+      traitFilter || undefined,
       limit,
       activePersona,
       bannedCharacters.length > 0 ? bannedCharacters : undefined
@@ -61,9 +64,10 @@ export function StatsPage() {
   });
 
   const { data: winrate, isLoading: loadingWinrate } = useQuery({
-    queryKey: ['stats', 'winrate', hunterFilter, limit, activePersona, bannedCharacters],
+    queryKey: ['stats', 'winrate', hunterFilter, traitFilter, limit, activePersona, bannedCharacters],
     queryFn: () => statsApi.getSurvivorWinrate(
       hunterFilter || undefined,
+      traitFilter || undefined,
       limit,
       activePersona,
       bannedCharacters.length > 0 ? bannedCharacters : undefined
@@ -71,9 +75,10 @@ export function StatsPage() {
   });
 
   const { data: kite, isLoading: loadingKite } = useQuery({
-    queryKey: ['stats', 'kite', hunterFilter, limit, activePersona, bannedCharacters],
+    queryKey: ['stats', 'kite', hunterFilter, traitFilter, limit, activePersona, bannedCharacters],
     queryFn: () => statsApi.getSurvivorKite(
       hunterFilter || undefined,
+      traitFilter || undefined,
       limit,
       activePersona,
       bannedCharacters.length > 0 ? bannedCharacters : undefined
@@ -81,9 +86,10 @@ export function StatsPage() {
   });
 
   const { data: maps, isLoading: loadingMaps } = useQuery({
-    queryKey: ['stats', 'maps', hunterFilter, limit, activePersona, bannedCharacters],
+    queryKey: ['stats', 'maps', hunterFilter, traitFilter, limit, activePersona, bannedCharacters],
     queryFn: () => statsApi.getMapStats(
       hunterFilter || undefined,
+      traitFilter || undefined,
       limit,
       activePersona,
       bannedCharacters.length > 0 ? bannedCharacters : undefined
@@ -93,6 +99,11 @@ export function StatsPage() {
   const { data: hunters } = useQuery({
     queryKey: ['hunters'],
     queryFn: masterApi.getHunters,
+  });
+
+  const { data: traits } = useQuery({
+    queryKey: ['traits'],
+    queryFn: masterApi.getTraits,
   });
 
   const { data: recentPersonas } = useQuery({
@@ -173,6 +184,25 @@ export function StatsPage() {
               {hunters?.map((hunter) => (
                 <option key={hunter} value={hunter}>
                   {hunter}
+                </option>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl maxW="200px">
+            <FormLabel fontSize="sm">特質絞り込み</FormLabel>
+            <Select
+              size="sm"
+              value={traitFilter}
+              onChange={(e) => setTraitFilter(e.target.value)}
+              bg="rgba(255, 255, 255, 0.8)"
+              borderColor="white"
+              borderWidth="2px"
+            >
+              <option value="">全特質</option>
+              {traits?.map((trait) => (
+                <option key={trait} value={trait}>
+                  {trait}
                 </option>
               ))}
             </Select>

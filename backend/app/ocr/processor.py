@@ -47,8 +47,8 @@ class OCRProcessor:
         
         # 画面レイアウトの設定（相対座標）
         self.layout = {
-            "icon_x_ratio": (0.29, 0.34),  # アイコンのX座標範囲（画面幅の17.5%~20.5%）
-            "icon_size_ratio": 0.04,         # アイコンサイズ（画面幅の3%）
+            "icon_x_ratio": (0.23, 0.34),  # アイコンのX座標範囲（iPad調整済み: 0.23から開始）
+            "icon_size_ratio": 0.062,         # アイコンサイズ（iPad調整済み: 0.062）
             "survivor_y_start": 0.43,       # サバイバーエリア開始（画面の19.5%）
             "survivor_y_end": 0.95,         # サバイバーエリア終了（画面の57.5%）
             "icon_y_offset_ratio": 0.02,    # アイコンY座標のオフセット（画面高さの2%下に）
@@ -881,16 +881,40 @@ class OCRProcessor:
             [(x, y, width, height), ...] のリスト（5箇所）
         """
         height, width = img.shape[:2]
+        aspect_ratio = width / height
 
-        # 相対座標から実座標に変換
-        icon_size = int(width * self.layout['icon_size_ratio'])
-        x_start = int(width * self.layout['icon_x_ratio'][0])
+        # アスペクト比に基づいて画面タイプを判定
+        print(f"[SCREEN] Size: {width}x{height}, Aspect ratio: {aspect_ratio:.3f}")
 
         # Y座標オフセットを取得（デフォルトは0）
         y_offset = int(height * self.layout.get('icon_y_offset_ratio', 0.0))
 
-        # 位置は常に同じ5箇所
-        y_positions_ratio = [0.29, 0.42, 0.555, 0.69, 0.825]
+        # アスペクト比に応じてY座標、X座標、アイコンサイズを調整
+        if aspect_ratio > 2.0:
+            # iPhone等の横長画面（2556x1179など）
+            y_positions_ratio = [0.29, 0.42, 0.555, 0.69, 0.825]
+            x_ratio = 0.29
+            icon_size_ratio = 0.04
+            screen_type = "iPhone (wide)"
+        elif aspect_ratio < 1.6:
+            # iPad等の正方形に近い画面（2360x1640など）
+            # ユーザーが手動で完璧に調整した座標値
+            y_positions_ratio = [0.33, 0.44, 0.555, 0.665, 0.78]
+            x_ratio = 0.23
+            icon_size_ratio = 0.062
+            screen_type = "iPad (square-ish)"
+        else:
+            # 中間的なアスペクト比（フォールバック）
+            y_positions_ratio = [0.25, 0.37, 0.49, 0.61, 0.73]
+            x_ratio = 0.29
+            icon_size_ratio = 0.04
+            screen_type = "Other (medium)"
+
+        # 相対座標から実座標に変換
+        icon_size = int(width * icon_size_ratio)
+        x_start = int(width * x_ratio)
+
+        print(f"[SCREEN TYPE] {screen_type}")
 
         if match_result == "敗北":
             print(f"[POSITION] Detecting 5 positions (defeat: survivors 1-4, then hunter)")

@@ -8,7 +8,7 @@ class StatsService:
     def __init__(self):
         self.supabase = get_supabase()
 
-    def get_overall_stats(self, user_id: str, hunter: str = None, persona: str = None, banned_characters: List[str] = None) -> Dict:
+    def get_overall_stats(self, user_id: str, hunter: str = None, trait: str = None, persona: str = None, banned_characters: List[str] = None) -> Dict:
         """全体統計"""
         query = self.supabase.table("matches")\
             .select("*")\
@@ -16,6 +16,9 @@ class StatsService:
 
         if hunter:
             query = query.eq("hunter_character", hunter)
+
+        if trait:
+            query = query.eq("trait_used", trait)
 
         if persona:
             query = query.eq("persona", persona)
@@ -49,7 +52,7 @@ class StatsService:
             "win_rate": f"{(wins/total*100):.1f}%" if total > 0 else "0%"
         }
 
-    def get_survivor_pick_rates(self, user_id: str, hunter: str = None, limit: int = None, persona: str = None, banned_characters: List[str] = None) -> List[Dict]:
+    def get_survivor_pick_rates(self, user_id: str, hunter: str = None, trait: str = None, limit: int = None, persona: str = None, banned_characters: List[str] = None) -> List[Dict]:
         """サバイバーキャラごとのピック回数"""
         # 最新のmatch_idを取得
         matches_query = self.supabase.table("matches")\
@@ -59,6 +62,9 @@ class StatsService:
 
         if hunter:
             matches_query = matches_query.eq("hunter_character", hunter)
+
+        if trait:
+            matches_query = matches_query.eq("trait_used", trait)
 
         if persona:
             matches_query = matches_query.eq("persona", persona)
@@ -97,7 +103,7 @@ class StatsService:
 
         return result
 
-    def get_survivor_winrate(self, user_id: str, hunter: str = None, limit: int = None, persona: str = None, banned_characters: List[str] = None) -> List[Dict]:
+    def get_survivor_winrate(self, user_id: str, hunter: str = None, trait: str = None, limit: int = None, persona: str = None, banned_characters: List[str] = None) -> List[Dict]:
         """サバイバーキャラごとの勝率"""
         # 最新のmatch_idを取得
         matches_query = self.supabase.table("matches")\
@@ -107,6 +113,9 @@ class StatsService:
 
         if hunter:
             matches_query = matches_query.eq("hunter_character", hunter)
+
+        if trait:
+            matches_query = matches_query.eq("trait_used", trait)
 
         if persona:
             matches_query = matches_query.eq("persona", persona)
@@ -170,7 +179,7 @@ class StatsService:
         # 勝率でソート（高い順）
         return sorted(result, key=lambda x: x["win_rate"], reverse=True)
 
-    def get_avg_kite_time(self, user_id: str, hunter: str = None, limit: int = None, persona: str = None, banned_characters: List[str] = None) -> List[Dict]:
+    def get_avg_kite_time(self, user_id: str, hunter: str = None, trait: str = None, limit: int = None, persona: str = None, banned_characters: List[str] = None) -> List[Dict]:
         """サバイバーキャラごとの平均牽制時間"""
         # 最新のmatch_idを取得
         matches_query = self.supabase.table("matches")\
@@ -180,6 +189,9 @@ class StatsService:
 
         if hunter:
             matches_query = matches_query.eq("hunter_character", hunter)
+
+        if trait:
+            matches_query = matches_query.eq("trait_used", trait)
 
         if persona:
             matches_query = matches_query.eq("persona", persona)
@@ -236,7 +248,7 @@ class StatsService:
 
         return sorted(result, key=lambda x: float(x["avg_kite_time"].replace("s", "")), reverse=True)
 
-    def get_map_stats(self, user_id: str, hunter: str = None, limit: int = None, persona: str = None, banned_characters: List[str] = None) -> List[Dict]:
+    def get_map_stats(self, user_id: str, hunter: str = None, trait: str = None, limit: int = None, persona: str = None, banned_characters: List[str] = None) -> List[Dict]:
         """マップごとの勝率"""
         query = self.supabase.table("matches")\
             .select("*")\
@@ -245,6 +257,9 @@ class StatsService:
 
         if hunter:
             query = query.eq("hunter_character", hunter)
+
+        if trait:
+            query = query.eq("trait_used", trait)
 
         if persona:
             query = query.eq("persona", persona)

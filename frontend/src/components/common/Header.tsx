@@ -1,30 +1,7 @@
-import {
-  Box,
-  Flex,
-  HStack,
-  Button,
-  Menu,
-  MenuButton,
-  MenuList,
-  MenuItem,
-  Avatar,
-  Text,
-  Image,
-  IconButton,
-  Drawer,
-  DrawerBody,
-  DrawerHeader,
-  DrawerOverlay,
-  DrawerContent,
-  DrawerCloseButton,
-  VStack,
-  useColorModeValue,
-  useDisclosure,
-} from '@chakra-ui/react';
-import { Link, useNavigate } from 'react-router-dom';
-import { FiChevronDown } from 'react-icons/fi';
-import { HamburgerIcon } from '@chakra-ui/icons';
+import { Box } from '@chakra-ui/react';
+import { useNavigate } from 'react-router-dom';
 import type { User } from '../../types';
+import CardNav from './CardNav';
 
 interface HeaderProps {
   user: User | null;
@@ -35,160 +12,97 @@ interface HeaderProps {
 
 export function Header({ user, isAuthenticated, onLogin, onLogout }: HeaderProps) {
   const navigate = useNavigate();
-  const bg = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.700');
-  const { isOpen, onOpen, onClose } = useDisclosure();
 
   const handleNavigation = (path: string) => {
     navigate(path);
-    onClose();
   };
 
+  // 認証済みユーザー用のCardNavアイテム設定（PC・スマホ共通）
+  const cardNavItems = isAuthenticated && user ? [
+    {
+      label: 'メニュー',
+      bgColor: '#00384eff',
+      textColor: '#fff',
+      links: [
+        { label: '記録', href: '/record', onClick: () => handleNavigation('/record') },
+        { label: '統計', href: '/stats', onClick: () => handleNavigation('/stats') },
+        { label: '履歴', href: '/history', onClick: () => handleNavigation('/history') },
+      ]
+    },
+    {
+      label: 'アカウント',
+      bgColor: '#011249ff',
+      textColor: '#fff',
+      links: [
+        { label: '設定', href: '/settings', onClick: () => handleNavigation('/settings') },
+      ]
+    },
+    {
+      label: 'その他',
+      bgColor: '#3d3d3dff',
+      textColor: '#fff',
+      links: [
+        { label: 'ヘルプ', href: '/help', onClick: () => handleNavigation('/help') },
+        { label: 'ログアウト', href: '#', onClick: onLogout },
+      ]
+    }
+  ] : [];
+
   return (
-    <Box
-      as="header"
-      bg={bg}
-      borderBottom="1px"
-      borderColor={borderColor}
-      px={4}
-      py={3}
-      position="sticky"
-      top={0}
-      zIndex={100}
-    >
-      <Flex maxW="1200px" mx="auto" align="center" justify="space-between">
-        <HStack spacing={8}>
-          <Box
-            as={Link}
-            to="/"
-            _hover={{ opacity: 0.8 }}
-            transition="opacity 0.2s"
-          >
-            <Image
+    <>
+      {/* 認証済み時のCardNavヘッダー（PC・スマホ共通） */}
+      {isAuthenticated && user && (
+        <Box position="relative" height="80px">
+          <CardNav
+            logo="/logo.png"
+            logoAlt="Identity Archive"
+            items={cardNavItems}
+            baseColor="#ffffff"
+            menuColor="#000000"
+          />
+        </Box>
+      )}
+
+      {/* 未認証時のシンプルヘッダー（全デバイス共通） */}
+      {!isAuthenticated && (
+        <Box
+          as="header"
+          bg="white"
+          borderBottom="1px"
+          borderColor="gray.200"
+          px={4}
+          py={3}
+          position="sticky"
+          top={0}
+          zIndex={100}
+        >
+          <Box maxW="1200px" mx="auto" display="flex" alignItems="center" justifyContent="space-between">
+            <Box
+              as="img"
               src="/logo.png"
               alt="Identity Archive"
               h="40px"
+              cursor="pointer"
+              onClick={() => navigate('/')}
             />
+            <Box
+              as="button"
+              bg="blue.500"
+              color="white"
+              px={4}
+              py={2}
+              borderRadius="md"
+              fontSize="sm"
+              fontWeight="medium"
+              cursor="pointer"
+              _hover={{ bg: 'blue.600' }}
+              onClick={onLogin}
+            >
+              ログイン
+            </Box>
           </Box>
-
-          {isAuthenticated && (
-            <HStack spacing={4} display={{ base: 'none', md: 'flex' }}>
-              <Button as={Link} to="/record" variant="ghost" size="sm">
-                記録
-              </Button>
-              <Button as={Link} to="/stats" variant="ghost" size="sm">
-                統計
-              </Button>
-              <Button as={Link} to="/history" variant="ghost" size="sm">
-                履歴
-              </Button>
-            </HStack>
-          )}
-        </HStack>
-
-        <HStack spacing={4}>
-          {isAuthenticated && user ? (
-            <>
-              {/* デスクトップ用メニュー */}
-              <Menu>
-                <MenuButton
-                  as={Button}
-                  variant="ghost"
-                  rightIcon={<FiChevronDown />}
-                  display={{ base: 'none', md: 'flex' }}
-                >
-                  <HStack>
-                    <Avatar size="sm" src={user.avatar_url} name={user.name} />
-                    <Text>
-                      {user.name || user.email}
-                    </Text>
-                  </HStack>
-                </MenuButton>
-                <MenuList>
-                  <MenuItem onClick={() => navigate('/settings')}>設定</MenuItem>
-                  <MenuItem onClick={onLogout}>ログアウト</MenuItem>
-                </MenuList>
-              </Menu>
-
-              {/* スマホ用ハンバーガーメニュー */}
-              <IconButton
-                icon={<HamburgerIcon />}
-                aria-label="メニューを開く"
-                onClick={onOpen}
-                variant="ghost"
-                display={{ base: 'flex', md: 'none' }}
-              />
-            </>
-          ) : (
-            <Button colorScheme="blue" onClick={onLogin}>
-              Googleでログイン
-            </Button>
-          )}
-        </HStack>
-      </Flex>
-
-      {/* スマホ用Drawerメニュー */}
-      <Drawer isOpen={isOpen} placement="right" onClose={onClose}>
-        <DrawerOverlay />
-        <DrawerContent>
-          <DrawerCloseButton />
-          <DrawerHeader borderBottomWidth="1px">
-            <HStack>
-              <Avatar size="sm" src={user?.avatar_url} name={user?.name} />
-              <Text fontSize="sm">{user?.name || user?.email}</Text>
-            </HStack>
-          </DrawerHeader>
-
-          <DrawerBody>
-            <VStack spacing={4} align="stretch" mt={4}>
-              <Button
-                onClick={() => handleNavigation('/record')}
-                variant="ghost"
-                justifyContent="flex-start"
-                size="lg"
-              >
-                記録
-              </Button>
-              <Button
-                onClick={() => handleNavigation('/stats')}
-                variant="ghost"
-                justifyContent="flex-start"
-                size="lg"
-              >
-                統計
-              </Button>
-              <Button
-                onClick={() => handleNavigation('/history')}
-                variant="ghost"
-                justifyContent="flex-start"
-                size="lg"
-              >
-                履歴
-              </Button>
-              <Button
-                onClick={() => handleNavigation('/settings')}
-                variant="ghost"
-                justifyContent="flex-start"
-                size="lg"
-              >
-                設定
-              </Button>
-              <Button
-                onClick={() => {
-                  onLogout();
-                  onClose();
-                }}
-                variant="ghost"
-                justifyContent="flex-start"
-                size="lg"
-                colorScheme="red"
-              >
-                ログアウト
-              </Button>
-            </VStack>
-          </DrawerBody>
-        </DrawerContent>
-      </Drawer>
-    </Box>
+        </Box>
+      )}
+    </>
   );
 }
