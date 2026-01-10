@@ -229,7 +229,7 @@ class StatsService:
             # "20s", "34s" などから秒数を抽出
             try:
                 seconds = int(kite_time_str.replace("s", ""))
-            except:
+            except (ValueError, AttributeError):
                 continue
 
             if char not in kite_data:

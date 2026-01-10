@@ -1,8 +1,11 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from ..database import get_supabase
 from .dependencies import get_current_user
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -58,7 +61,8 @@ async def login(request: LoginRequest):
         return LoginResponse(url=response.url)
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"認証エラー: {str(e)}")
+        logger.error(f"認証エラー: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="認証処理に失敗しました")
 
 
 @router.post("/token", response_model=TokenResponse)
@@ -79,8 +83,11 @@ async def exchange_token(request: TokenRequest):
             expires_in=response.session.expires_in
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"トークン交換エラー: {str(e)}")
+        logger.error(f"トークン交換エラー: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="トークン交換に失敗しました")
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -101,8 +108,11 @@ async def refresh_token(refresh_token: str):
             expires_in=response.session.expires_in
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"トークン更新エラー: {str(e)}")
+        logger.error(f"トークン更新エラー: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="トークン更新に失敗しました")
 
 
 @router.get("/me", response_model=UserResponse)
@@ -131,4 +141,5 @@ async def logout(current_user=Depends(get_current_user)):
         return {"message": "ログアウトしました"}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"ログアウトエラー: {str(e)}")
+        logger.error(f"ログアウトエラー: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="ログアウトに失敗しました")

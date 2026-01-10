@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from typing import List
 from pathlib import Path
@@ -6,7 +7,12 @@ from ..auth.dependencies import get_current_user
 from ..matches.schemas import AnalyzeResponse, SurvivorData
 from .processor import OCRProcessor
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/matches", tags=["ocr"])
+
+# ファイルサイズ制限（10MB）
+MAX_FILE_SIZE = 10 * 1024 * 1024
 
 # OCRプロセッサをシングルトンで初期化（起動時に1回のみ）
 # backendディレクトリからの相対パス
@@ -43,6 +49,13 @@ async def analyze_image(
         # 画像データを読み込み
         contents = await file.read()
 
+        # ファイルサイズチェック
+        if len(contents) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"ファイルサイズが大きすぎます（最大10MB）"
+            )
+
         # OCR処理（重い処理なのでスレッドプールで実行）
         loop = asyncio.get_event_loop()
         ocr = get_ocr_processor()
@@ -70,8 +83,11 @@ async def analyze_image(
             survivors=survivors
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"OCR処理エラー: {str(e)}")
+        logger.error(f"OCR処理エラー: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="画像の解析に失敗しました。別の画像をお試しください")
 
 
 @router.post("/analyze-multiple", response_model=List[AnalyzeResponse])
@@ -90,6 +106,12 @@ async def analyze_multiple_images(
 
         try:
             contents = await file.read()
+
+            # ファイルサイズチェック
+            if len(contents) > MAX_FILE_SIZE:
+                logger.warning(f"ファイルサイズ超過: {len(contents)} bytes")
+                continue
+
             loop = asyncio.get_event_loop()
             ocr = get_ocr_processor()
             result = await loop.run_in_executor(None, ocr.process_image, contents)
@@ -117,7 +139,7 @@ async def analyze_multiple_images(
 
         except Exception as e:
             # エラーがあってもスキップして続行
-            print(f"[ERROR] Failed to analyze image: {e}")
+            logger.error(f"画像解析エラー: {str(e)}", exc_info=True)
             continue
 
     return results

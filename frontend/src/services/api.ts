@@ -15,6 +15,15 @@ import type {
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
+// 統計APIのパラメータ型
+interface StatsParams {
+  hunter?: string;
+  trait?: string;
+  limit?: number;
+  persona?: string;
+  banned_characters?: string;
+}
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -111,7 +120,7 @@ export const matchesApi = {
 // 統計API
 export const statsApi = {
   getOverall: async (hunter?: string, trait?: string, persona?: string, bannedCharacters?: string[]): Promise<OverallStats> => {
-    const params: any = { hunter, trait, persona };
+    const params: StatsParams = { hunter, trait, persona };
     if (bannedCharacters && bannedCharacters.length > 0) {
       params.banned_characters = bannedCharacters.join(',');
     }
@@ -120,7 +129,7 @@ export const statsApi = {
   },
 
   getSurvivorPicks: async (hunter?: string, trait?: string, limit?: number, persona?: string, bannedCharacters?: string[]): Promise<SurvivorPickStats[]> => {
-    const params: any = { hunter, trait, limit, persona };
+    const params: StatsParams = { hunter, trait, limit, persona };
     if (bannedCharacters && bannedCharacters.length > 0) {
       params.banned_characters = bannedCharacters.join(',');
     }
@@ -129,7 +138,7 @@ export const statsApi = {
   },
 
   getSurvivorWinrate: async (hunter?: string, trait?: string, limit?: number, persona?: string, bannedCharacters?: string[]): Promise<SurvivorWinrateStats[]> => {
-    const params: any = { hunter, trait, limit, persona };
+    const params: StatsParams = { hunter, trait, limit, persona };
     if (bannedCharacters && bannedCharacters.length > 0) {
       params.banned_characters = bannedCharacters.join(',');
     }
@@ -138,7 +147,7 @@ export const statsApi = {
   },
 
   getSurvivorKite: async (hunter?: string, trait?: string, limit?: number, persona?: string, bannedCharacters?: string[]): Promise<SurvivorKiteStats[]> => {
-    const params: any = { hunter, trait, limit, persona };
+    const params: StatsParams = { hunter, trait, limit, persona };
     if (bannedCharacters && bannedCharacters.length > 0) {
       params.banned_characters = bannedCharacters.join(',');
     }
@@ -147,7 +156,7 @@ export const statsApi = {
   },
 
   getMapStats: async (hunter?: string, trait?: string, limit?: number, persona?: string, bannedCharacters?: string[]): Promise<MapStats[]> => {
-    const params: any = { hunter, trait, limit, persona };
+    const params: StatsParams = { hunter, trait, limit, persona };
     if (bannedCharacters && bannedCharacters.length > 0) {
       params.banned_characters = bannedCharacters.join(',');
     }

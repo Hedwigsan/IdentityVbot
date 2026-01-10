@@ -26,8 +26,8 @@ app.add_middleware(
         "https://identity-vbot.vercel.app",  # Vercel本番環境
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # ルーター登録

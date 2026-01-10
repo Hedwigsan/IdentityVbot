@@ -1,8 +1,11 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
 from ..auth.dependencies import get_current_user
 from .schemas import MatchCreate, MatchResponse, MatchListResponse, SurvivorResponse
 from .service import match_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/matches", tags=["matches"])
 
@@ -50,7 +53,8 @@ async def create_match(match_data: MatchCreate, current_user=Depends(get_current
         return _format_match_response(full_match)
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"保存エラー: {str(e)}")
+        logger.error(f"試合保存エラー: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="試合データの保存に失敗しました")
 
 
 @router.get("", response_model=MatchListResponse)

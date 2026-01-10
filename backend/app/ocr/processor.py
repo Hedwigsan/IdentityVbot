@@ -1,9 +1,12 @@
+import logging
 import easyocr
 import cv2
 import numpy as np
 from typing import Dict, List, Tuple, Optional
 import re
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # yomitokuのインポート（オプション）
 try:
@@ -21,17 +24,17 @@ class OCRProcessor:
 
         if self.use_yomitoku:
             try:
-                print("[INFO] Initializing yomitoku...")
+                logger.info("[INFO] Initializing yomitoku...")
                 self.yomitoku_analyzer = DocumentAnalyzer(device='cpu')  # GPUを使う場合は 'cuda'
-                print("[SUCCESS] Using yomitoku OCR")
+                logger.info("[SUCCESS] Using yomitoku OCR")
             except Exception as e:
-                print(f"[WARNING] Failed to initialize yomitoku: {e}")
-                print("[INFO] Falling back to easyocr")
+                logger.warning(f"[WARNING] Failed to initialize yomitoku: {e}")
+                logger.info("[INFO] Falling back to easyocr")
                 self.use_yomitoku = False
                 self.reader = easyocr.Reader(['ja', 'en'], gpu=False)
         else:
             if not YOMITOKU_AVAILABLE:
-                print("[WARNING] yomitoku not installed. Using easyocr")
+                logger.warning("[WARNING] yomitoku not installed. Using easyocr")
             self.reader = easyocr.Reader(['ja', 'en'], gpu=False)
 
         # キャラアイコンのテンプレート画像（必須）
@@ -92,13 +95,13 @@ class OCRProcessor:
                                     ]
                                 }
                         except Exception as e:
-                            print(f"[WARNING] Failed to load {char_name}: {e}")
+                            logger.warning(f"[WARNING] Failed to load {char_name}: {e}")
 
         total = len(self.survivor_templates) + len(self.hunter_templates)
         if total > 0:
-            print(f"[SUCCESS] Loaded {len(self.survivor_templates)} survivor and {len(self.hunter_templates)} hunter icons")
+            logger.info(f"[SUCCESS] Loaded {len(self.survivor_templates)} survivor and {len(self.hunter_templates)} hunter icons")
         else:
-            print("[WARNING] No character icons found")
+            logger.warning("[WARNING] No character icons found")
 
     def _load_templates_from_dir(self, directory: Path, templates_dict: dict, char_type: str):
         """指定ディレクトリからテンプレートを読み込む"""
@@ -115,7 +118,7 @@ class OCRProcessor:
                     nparr = np.frombuffer(image_data, np.uint8)
                     template = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                 except Exception as e:
-                    print(f"[WARNING] Failed to load {char_type} {char_name}: {e}")
+                    logger.warning(f"[WARNING] Failed to load {char_type} {char_name}: {e}")
                     continue
 
                 if template is not None:
@@ -152,22 +155,22 @@ class OCRProcessor:
         """yomitokuでOCR実行"""
         try:
             # yomitokuで解析
-            print("[DEBUG] Starting yomitoku analysis...")
+            logger.debug("[DEBUG] Starting yomitoku analysis...")
 
             # イベントループが既に実行中かチェック
             import asyncio
             try:
                 loop = asyncio.get_running_loop()
                 # 既に実行中の場合は、nest_asyncioを試す
-                print("[DEBUG] Event loop already running, trying nest_asyncio...")
+                logger.debug("[DEBUG] Event loop already running, trying nest_asyncio...")
                 try:
                     import nest_asyncio
                     nest_asyncio.apply()
-                    print("[DEBUG] nest_asyncio applied successfully")
+                    logger.debug("[DEBUG] nest_asyncio applied successfully")
                     results = self.yomitoku_analyzer(img)
                 except ImportError:
                     # nest_asyncioが無い場合は、新しいスレッドで実行
-                    print("[DEBUG] nest_asyncio not available, running in thread...")
+                    logger.debug("[DEBUG] nest_asyncio not available, running in thread...")
                     import concurrent.futures
                     import threading
 
@@ -185,11 +188,11 @@ class OCRProcessor:
                         results = future.result(timeout=60)
             except RuntimeError:
                 # イベントループが実行中でない場合は通常実行
-                print("[DEBUG] No event loop running, executing normally...")
+                logger.debug("[DEBUG] No event loop running, executing normally...")
                 results = self.yomitoku_analyzer(img)
 
             # デバッグ: 結果の構造を確認
-            print(f"[DEBUG] yomitoku result type: {type(results)}")
+            logger.debug(f"[DEBUG] yomitoku result type: {type(results)}")
 
             # yomitokuの結果をeasyocrの形式に変換
             # easyocr形式: [(bbox, text, confidence), ...]
@@ -208,7 +211,7 @@ class OCRProcessor:
                 # DocumentAnalyzerSchemaからOCR結果を取得
                 # yomitoku 0.10.1では、wordsに単語レベルのOCR結果が含まれる
                 if hasattr(doc_schema, 'words') and doc_schema.words:
-                    print(f"[INFO] Found {len(doc_schema.words)} words")
+                    logger.info(f"[INFO] Found {len(doc_schema.words)} words")
 
                     for word in doc_schema.words:
                         # yomitokuの構造: content (text), points (bbox), rec_score (confidence)
@@ -221,7 +224,7 @@ class OCRProcessor:
 
                 # paragraphsも試す（より長いテキスト単位） - 重複を避けるため、wordsが空の場合のみ
                 if not text_blocks and hasattr(doc_schema, 'paragraphs') and doc_schema.paragraphs:
-                    print(f"[INFO] Found {len(doc_schema.paragraphs)} paragraphs")
+                    logger.info(f"[INFO] Found {len(doc_schema.paragraphs)} paragraphs")
 
                     for para in doc_schema.paragraphs:
                         if hasattr(para, 'content') and hasattr(para, 'bbox'):
@@ -231,26 +234,26 @@ class OCRProcessor:
                                 'score': getattr(para, 'score', 1.0)
                             })
 
-                print(f"[DEBUG] Extracted {len(text_blocks)} text elements from document schema")
+                logger.debug(f"[DEBUG] Extracted {len(text_blocks)} text elements from document schema")
 
             elif isinstance(results, dict):
                 # dict形式（旧バージョン対応）
-                print(f"[DEBUG] yomitoku result keys: {results.keys()}")
+                logger.debug(f"[DEBUG] yomitoku result keys: {results.keys()}")
                 # pagesから全ブロックを取得
                 if 'pages' in results and len(results['pages']) > 0:
                     page = results['pages'][0]
-                    print(f"[DEBUG] Page keys: {page.keys() if isinstance(page, dict) else type(page)}")
+                    logger.debug(f"[DEBUG] Page keys: {page.keys() if isinstance(page, dict) else type(page)}")
                     if 'blocks' in page:
                         text_blocks = page['blocks']
-                        print(f"[DEBUG] Number of blocks: {len(text_blocks)}")
+                        logger.debug(f"[DEBUG] Number of blocks: {len(text_blocks)}")
                 elif 'blocks' in results:
                     text_blocks = results['blocks']
-                    print(f"[DEBUG] Number of blocks: {len(text_blocks)}")
+                    logger.debug(f"[DEBUG] Number of blocks: {len(text_blocks)}")
 
             # デバッグ: 最初の数ブロックを表示
-            print(f"[DEBUG] Sample of text_blocks (type: {type(text_blocks)}):")
+            logger.debug(f"[DEBUG] Sample of text_blocks (type: {type(text_blocks)}):")
             for i, block in enumerate(text_blocks[:3]):
-                print(f"  Block {i} (type: {type(block)}): {block}")
+                logger.debug(f"  Block {i} (type: {type(block)}): {block}")
 
             for block in text_blocks:
                 # blockがdictの場合
@@ -290,26 +293,26 @@ class OCRProcessor:
 
                     ocr_results.append((bbox_formatted, text, confidence))
 
-            print(f"[SUCCESS] yomitoku detected {len(ocr_results)} text blocks")
+            logger.info(f"[SUCCESS] yomitoku detected {len(ocr_results)} text blocks")
 
             # デバッグ: 最初の数個の結果を表示
             for i, (bbox, text, conf) in enumerate(ocr_results[:5]):
-                print(f"  Result {i}: '{text}' (confidence: {conf:.2f})")
+                logger.debug(f"  Result {i}: '{text}' (confidence: {conf:.2f})")
 
             return ocr_results
 
         except Exception as e:
-            print(f"[WARNING] yomitoku OCR failed: {e}")
+            logger.warning(f"[WARNING] yomitoku OCR failed: {e}")
             import traceback
             traceback.print_exc()
-            print("[INFO] Falling back to easyocr...")
+            logger.info("[INFO] Falling back to easyocr...")
             return self._run_easyocr(img)
 
     def _run_easyocr(self, img: np.ndarray) -> List:
         """easyocrでOCR実行（フォールバック）"""
         # readerが初期化されていない場合は初期化
         if self.reader is None:
-            print("[INFO] Initializing easyocr...")
+            logger.info("[INFO] Initializing easyocr...")
             self.reader = easyocr.Reader(['ja', 'en'], gpu=False)
 
         results = self.reader.readtext(
@@ -322,7 +325,7 @@ class OCRProcessor:
             canvas_size=2560,  # キャンバスサイズを大きく
             mag_ratio=1.5     # 拡大率
         )
-        print(f"[SUCCESS] easyocr detected {len(results)} text blocks")
+        logger.info(f"[SUCCESS] easyocr detected {len(results)} text blocks")
         return results
     
     def _parse_match_data(self, results: List, img: np.ndarray) -> Dict:
@@ -346,27 +349,27 @@ class OCRProcessor:
             x_center = (bbox[0][0] + bbox[2][0]) / 2 / width
 
             # デバッグ出力
-            print(f"OCR: '{text}' (信頼度: {conf:.2f}, Y: {y_center:.2%})")
+            logger.debug(f"OCR: '{text}' (信頼度: {conf:.2f}, Y: {y_center:.2%})")
 
             # 勝利/敗北/相打ちを検出（画面上部40%以内 - より広範囲で検出）
             if y_center < 0.4:  # 画面上部40%以内に拡張
                 # 相打ちを最初にチェック（「打」を含むため）
                 if "相打" in text or text == "相":
                     match_data["result"] = "引き分け"  # フロントエンドで「引き分け」として扱う
-                    print(f"  [DETECTED] Draw (from: '{text}')")
+                    logger.debug(f"  [DETECTED] Draw (from: '{text}')")
                 elif "勝利" in text or text == "勝":
                     match_data["result"] = "勝利"
-                    print(f"  [DETECTED] Victory (from: '{text}')")
+                    logger.debug(f"  [DETECTED] Victory (from: '{text}')")
                 # 敗北パターンを拡張（部分一致も含む）
                 elif "敗北" in text or text == "敗" or "失敗" in text or text == "失":
                     match_data["result"] = "敗北"
-                    print(f"  [DETECTED] Defeat (from: '{text}')")
+                    logger.debug(f"  [DETECTED] Defeat (from: '{text}')")
 
             # マップ名を検出
             for map_name in self.map_names:
                 if map_name in text:
                     match_data["map_name"] = map_name
-                    print(f"  [MAP] {map_name}")
+                    logger.debug(f"  [MAP] {map_name}")
                     break
 
             # 試合日時を検出（例: "11月2日12:57", "11/2 12:57", "11月2日12.42"）
@@ -406,7 +409,7 @@ class OCRProcessor:
                                 played_datetime = datetime(current_year - 1, month, day, hour, minute, tzinfo=jst)
 
                             match_data["played_at"] = played_datetime.isoformat()
-                            print(f"  [DATETIME] {played_datetime.year}/{month}/{day} {hour}:{minute:02d} JST")
+                            logger.debug(f"  [DATETIME] {played_datetime.year}/{month}/{day} {hour}:{minute:02d} JST")
                         except ValueError:
                             pass  # 無効な日付の場合はスキップ
                     break
@@ -425,7 +428,7 @@ class OCRProcessor:
                     # 試合時間は通常15分以内
                     if minutes <= 15:
                         match_data["duration"] = f"{minutes}:{seconds:02d}"
-                        print(f"  [DURATION] {match_data['duration']}")
+                        logger.debug(f"  [DURATION] {match_data['duration']}")
                         break
 
         # サバイバー情報を抽出（画像認識ベース）
@@ -436,12 +439,12 @@ class OCRProcessor:
         # ハンター情報を設定
         if detected_hunter:
             match_data["hunter_character"] = detected_hunter
-            print(f"[AUTO-DETECTED] Hunter: {detected_hunter}")
+            logger.info(f"[AUTO-DETECTED] Hunter: {detected_hunter}")
 
         # 勝敗が検出されなかった場合はデフォルト値を設定
         if match_data["result"] is None:
             match_data["result"] = "不明"
-            print("[WARNING] Could not detect match result")
+            logger.warning("[WARNING] Could not detect match result")
 
         return match_data
     
@@ -459,7 +462,7 @@ class OCRProcessor:
         # 試合結果を渡して、敗北時の位置調整を行う
         icon_positions = self._detect_icon_positions(img, match_result)
 
-        print(f"\n[START] Survivor recognition... (Screen size: {width}x{height})")
+        logger.debug(f"[START] Survivor recognition... (Screen size: {width}x{height})")
 
         # 2. 各位置でアイコンを認識
         for position, icon_data in enumerate(icon_positions, 1):
@@ -471,7 +474,7 @@ class OCRProcessor:
             else:
                 is_hunter_position = (position == 1)
 
-            print(f"\nPosition {position} (Expected: {'Hunter' if is_hunter_position else 'Survivor'}):")
+            logger.debug(f"Position {position} (Expected: {'Hunter' if is_hunter_position else 'Survivor'}):")
 
             # 座標データを展開
             if len(icon_data) == 4:
@@ -503,13 +506,13 @@ class OCRProcessor:
             # ハンター位置の特別処理
             if is_hunter_position:
                 if char_type == "hunter":
-                    print(f"  [INFO] Hunter detected: {char_name} - skipping survivor list")
+                    logger.debug(f"  [INFO] Hunter detected: {char_name} - skipping survivor list")
                     detected_hunter = char_name
                 else:
                     # ハンター位置で認識されたがサバイバーと判定された場合
                     # ハンターアイコンテンプレートが不足している可能性が高い
-                    print(f"  [INFO] Position {position} recognized as survivor '{char_name}' - assuming this is hunter (icon template missing)")
-                    print(f"  [INFO] Skipping position {position} (hunter position)")
+                    logger.debug(f"  [INFO] Position {position} recognized as survivor '{char_name}' - assuming this is hunter (icon template missing)")
+                    logger.debug(f"  [INFO] Skipping position {position} (hunter position)")
                 # ハンター位置は常にスキップ
                 continue
 
@@ -517,7 +520,7 @@ class OCRProcessor:
                 survivor["character"] = char_name
                 survivor["type"] = char_type  # ハンターかサバイバーか
             else:
-                print(f"  [FAILED] Could not recognize character icon (position: x={icon_x}, y={icon_y})")
+                logger.debug(f"  [FAILED] Could not recognize character icon (position: x={icon_x}, y={icon_y})")
 
             # サバイバーの場合のみデータを取得
             if char_type == "survivor":
@@ -530,11 +533,11 @@ class OCRProcessor:
             if survivor["character"] and char_type == "survivor":
                 survivors.append(survivor)
             elif char_type == "hunter":
-                print(f"  [INFO] Hunter detected: {char_name} - skipping survivor list")
+                logger.debug(f"  [INFO] Hunter detected: {char_name} - skipping survivor list")
 
-        print(f"\n[SUCCESS] Recognized {len(survivors)} survivors\n")
+        logger.info(f"[SUCCESS] Recognized {len(survivors)} survivors\n")
         if detected_hunter:
-            print(f"[SUCCESS] Hunter detected: {detected_hunter}\n")
+            logger.info(f"[SUCCESS] Hunter detected: {detected_hunter}\n")
 
         return survivors, detected_hunter
     
@@ -585,11 +588,11 @@ class OCRProcessor:
         row_texts.sort(key=sort_key)
 
         # デバッグ出力: この行に含まれるテキストのインデックスと内容
-        print(f"    [DEBUG] Row contains {len(row_texts)} texts")
+        logger.debug(f"    [DEBUG] Row contains {len(row_texts)} texts")
         for idx, bbox, text, conf in row_texts:
             x_center = (bbox[0][0] + bbox[2][0]) / 2
             y_center = (bbox[0][1] + bbox[2][1]) / 2
-            print(f"    [Global {idx}, X:{x_center:.1f}, Y:{y_center:.1f}] '{text}' (confidence: {conf:.2f})")
+            logger.debug(f"    [Global {idx}, X:{x_center:.1f}, Y:{y_center:.1f}] '{text}' (confidence: {conf:.2f})")
 
         # X座標順（左→右）で、ラベルを検出し、その次のテキストを値として取得
         # 注意: ラベル検出の順序が重要（より具体的なものを先にチェック）
@@ -598,12 +601,12 @@ class OCRProcessor:
 
             # 解読進捗ラベルを検出
             if '解読' in text or '進捗' in text or '進排' in text or '進度' in text:
-                print(f"    [DEBUG] Found decode label at row index {i} (global {idx}): '{text}'")
+                logger.debug(f"    [DEBUG] Found decode label at row index {i} (global {idx}): '{text}'")
                 # 次のテキストを確認（row_texts内で次）
                 if i + 1 < len(row_texts):
                     next_idx, next_bbox, next_text, next_conf = row_texts[i + 1]
                     next_clean = next_text.replace(" ", "").replace(",", "").replace(".", "")
-                    print(f"    [DEBUG] Next text at row index {i+1} (global {next_idx}): '{next_text}'")
+                    logger.debug(f"    [DEBUG] Next text at row index {i+1} (global {next_idx}): '{next_text}'")
 
                     # パーセント表記を探す
                     # まず、oを0に変換、gを%に変換
@@ -621,17 +624,17 @@ class OCRProcessor:
                             if value == '０':
                                 value = '0'
                             data["decode_progress"] = value + "%"
-                            print(f"  [DECODE] {data['decode_progress']} (from: '{next_text}')")
+                            logger.debug(f"  [DECODE] {data['decode_progress']} (from: '{next_text}')")
                             break
 
             # 牽制ラベルを検出（「制」「への」でも可）
             elif '牽制' in text or '制' in text or 'への' in text or 'ハンターへの' in text:
-                print(f"    [DEBUG] Found kite label at row index {i} (global {idx}): '{text}'")
+                logger.debug(f"    [DEBUG] Found kite label at row index {i} (global {idx}): '{text}'")
                 # 次のテキストを確認（row_texts内で次）
                 if i + 1 < len(row_texts):
                     next_idx, next_bbox, next_text, next_conf = row_texts[i + 1]
                     next_clean = next_text.replace(" ", "").replace(",", "").replace(".", "")
-                    print(f"    [DEBUG] Next text at row index {i+1} (global {next_idx}): '{next_text}'")
+                    logger.debug(f"    [DEBUG] Next text at row index {i+1} (global {next_idx}): '{next_text}'")
 
                     # 時間表記を探す
                     # まず、O/o→0、G→6に変換
@@ -652,7 +655,7 @@ class OCRProcessor:
                             else:
                                 time_value = match.group(1)
                                 data["kite_time"] = time_value + "s"
-                            print(f"  [KITE] {data['kite_time']} (from: '{next_text}')")
+                            logger.debug(f"  [KITE] {data['kite_time']} (from: '{next_text}')")
                             break
 
             # 援助/救助ラベルを検出（板より前にチェック）
@@ -681,7 +684,7 @@ class OCRProcessor:
                             if number_match:
                                 value = int(number_match.group(1))
                                 data["rescues"] = value
-                                print(f"  [RESCUE] {value} (from: '{next_text}' at X:{next_x:.1f}, Y:{next_y:.1f})")
+                                logger.debug(f"  [RESCUE] {value} (from: '{next_text}' at X:{next_x:.1f}, Y:{next_y:.1f})")
                                 break
 
             # 板ラベルを検出（「板命中」全体をチェック）
@@ -702,7 +705,7 @@ class OCRProcessor:
                         if number_match:
                             value = int(number_match.group(1))
                             data["board_hits"] = value
-                            print(f"  [BOARD] {value} (from: '{next_text}')")
+                            logger.debug(f"  [BOARD] {value} (from: '{next_text}')")
 
             # 治療ラベルを検出
             elif '治療' in text:
@@ -730,7 +733,7 @@ class OCRProcessor:
                             if number_match:
                                 value = int(number_match.group(1))
                                 data["heals"] = value
-                                print(f"  [HEAL] {value} (from: '{next_text}' at X:{next_x:.1f}, Y:{next_y:.1f})")
+                                logger.debug(f"  [HEAL] {value} (from: '{next_text}' at X:{next_x:.1f}, Y:{next_y:.1f})")
                                 break
 
         return data
@@ -749,7 +752,7 @@ class OCRProcessor:
             (キャラクター名, タイプ): タイプは"hunter"または"survivor"
         """
         if not self.survivor_templates and not self.hunter_templates:
-            print("[WARNING] Icon templates not loaded")
+            logger.warning("[WARNING] Icon templates not loaded")
             return None, None
 
         # アイコン領域を切り出し（周辺のパディングを含める）
@@ -852,7 +855,7 @@ class OCRProcessor:
 
         # 閾値チェック（最低40%以上）
         if best_score < 0.40:
-            print(f"  [FAILED] Score below threshold: {best_score:.2%} < 40%")
+            logger.debug(f"  [FAILED] Score below threshold: {best_score:.2%} < 40%")
             return None, None
 
         # 2位との差が小さすぎる場合は信頼性が低いと判断
@@ -860,10 +863,10 @@ class OCRProcessor:
             second_score = sorted_scores[1][1][0]
             score_diff = best_score - second_score
             if score_diff < 0.05:  # 5%未満の差
-                print(f"  [WARNING] Small difference from 2nd place: {score_diff:.2%} (1st: {best_score:.2%}, 2nd: {second_score:.2%})")
+                logger.warning(f"  [WARNING] Small difference from 2nd place: {score_diff:.2%} (1st: {best_score:.2%}, 2nd: {second_score:.2%})")
                 # それでも採用するが警告を出す
 
-        print(f"  [RECOGNIZED] [{char_type.upper()}] {best_char} (confidence: {best_score:.2%})")
+        logger.debug(f"  [RECOGNIZED] [{char_type.upper()}] {best_char} (confidence: {best_score:.2%})")
         return best_char, char_type
     
     def _detect_icon_positions(self, img: np.ndarray, match_result: str = None) -> List[Tuple[int, int]]:
@@ -884,7 +887,7 @@ class OCRProcessor:
         aspect_ratio = width / height
 
         # アスペクト比に基づいて画面タイプを判定
-        print(f"[SCREEN] Size: {width}x{height}, Aspect ratio: {aspect_ratio:.3f}")
+        logger.debug(f"[SCREEN] Size: {width}x{height}, Aspect ratio: {aspect_ratio:.3f}")
 
         # Y座標オフセットを取得（デフォルトは0）
         y_offset = int(height * self.layout.get('icon_y_offset_ratio', 0.0))
@@ -914,12 +917,12 @@ class OCRProcessor:
         icon_size = int(width * icon_size_ratio)
         x_start = int(width * x_ratio)
 
-        print(f"[SCREEN TYPE] {screen_type}")
+        logger.debug(f"[SCREEN TYPE] {screen_type}")
 
         if match_result == "敗北":
-            print(f"[POSITION] Detecting 5 positions (defeat: survivors 1-4, then hunter)")
+            logger.debug(f"[POSITION] Detecting 5 positions (defeat: survivors 1-4, then hunter)")
         else:
-            print(f"[POSITION] Detecting 5 positions (victory: hunter, then survivors 1-4)")
+            logger.debug(f"[POSITION] Detecting 5 positions (victory: hunter, then survivors 1-4)")
 
         positions = []
         for y_ratio in y_positions_ratio:

@@ -1,6 +1,9 @@
+import logging
 from fastapi import Depends, HTTPException, Header
 from typing import Optional
 from ..database import get_supabase
+
+logger = logging.getLogger(__name__)
 
 
 async def get_current_user(authorization: Optional[str] = Header(None)):
@@ -25,8 +28,11 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
 
         return user_response.user
 
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=401, detail=f"認証エラー: {str(e)}")
+        logger.error(f"認証エラー: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=401, detail="認証に失敗しました")
 
 
 async def get_current_user_optional(authorization: Optional[str] = Header(None)):
