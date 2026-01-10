@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { authApi } from '../services/api';
 import type { User } from '../types';
@@ -39,7 +40,7 @@ export function useAuth() {
     fetchUser();
 
     // Supabaseの認証状態変更を監視
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       if (session) {
         localStorage.setItem('access_token', session.access_token);
         fetchUser();
