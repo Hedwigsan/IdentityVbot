@@ -11,6 +11,7 @@ import {
   Card,
   CardBody,
   Link,
+  Image,
 } from '@chakra-ui/react';
 
 export function HelpPage() {
@@ -51,8 +52,16 @@ export function HelpPage() {
                   </AccordionButton>
                 </h2>
                 <AccordionPanel pb={4}>
-                  <VStack align="stretch" spacing={2}>
+                  <VStack align="stretch" spacing={3}>
                     <Text>1. ゲームの試合結果画面のスクリーンショットを撮影します</Text>
+                    <Image
+                      src="/example.png"
+                      alt="試合結果画面の例"
+                      borderRadius="md"
+                      maxW="600px"
+                      w="100%"
+                      my={2}
+                    />
                     <Text>2. 「記録」ページで画像をアップロードします（複数枚同時アップロード可能）</Text>
                     <Text>3. 自動解析された内容を確認・修正します</Text>
                     <Text>4. 人格、特質、BANキャラなどの共通設定を入力します</Text>
