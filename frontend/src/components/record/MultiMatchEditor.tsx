@@ -20,7 +20,11 @@ import {
   Divider,
   Badge,
   Text,
+  Switch,
+  Collapse,
+  IconButton,
 } from '@chakra-ui/react';
+import { ChevronDownIcon, ChevronUpIcon } from '@chakra-ui/icons';
 import { useQuery } from '@tanstack/react-query';
 import { masterApi } from '../../services/api';
 import type { AnalyzeResponse, MatchCreateRequest, SurvivorData } from '../../types';
@@ -38,6 +42,10 @@ interface MatchData {
   hunterCharacter: string;
   playedAt: string;
   survivors: SurvivorData[];
+  useIndividualSettings: boolean;
+  individualPersona?: string;
+  individualTrait?: string;
+  individualBannedCharacters?: string[];
 }
 
 export function MultiMatchEditor({ analyzeResults, onSave, onCancel }: MultiMatchEditorProps) {
@@ -45,6 +53,7 @@ export function MultiMatchEditor({ analyzeResults, onSave, onCancel }: MultiMatc
   const [persona, setPersona] = useState('');
   const [traitUsed, setTraitUsed] = useState('');
   const [bannedCharacters, setBannedCharacters] = useState<string[]>([]);
+  const [isCommonBanOpen, setIsCommonBanOpen] = useState(false);
 
   // 各試合のデータ
   const [matches, setMatches] = useState<MatchData[]>(
@@ -55,6 +64,10 @@ export function MultiMatchEditor({ analyzeResults, onSave, onCancel }: MultiMatc
       hunterCharacter: result.hunter_character || '',
       playedAt: result.played_at || '',
       survivors: result.survivors || [],
+      useIndividualSettings: false,
+      individualPersona: '',
+      individualTrait: '',
+      individualBannedCharacters: [],
     }))
   );
 
@@ -90,11 +103,30 @@ export function MultiMatchEditor({ analyzeResults, onSave, onCancel }: MultiMatc
   const handleMatchChange = (
     index: number,
     field: keyof MatchData,
-    value: string | SurvivorData[]
+    value: string | SurvivorData[] | boolean | string[]
   ) => {
     const newMatches = [...matches];
     newMatches[index] = { ...newMatches[index], [field]: value };
     setMatches(newMatches);
+  };
+
+  const handleIndividualBanToggle = (matchIndex: number, name: string) => {
+    const match = matches[matchIndex];
+    const currentBanned = match.individualBannedCharacters || [];
+
+    if (currentBanned.includes(name)) {
+      handleMatchChange(
+        matchIndex,
+        'individualBannedCharacters',
+        currentBanned.filter((c) => c !== name)
+      );
+    } else if (currentBanned.length < 3) {
+      handleMatchChange(
+        matchIndex,
+        'individualBannedCharacters',
+        [...currentBanned, name]
+      );
+    }
   };
 
   const handleSurvivorChange = (
@@ -116,9 +148,17 @@ export function MultiMatchEditor({ analyzeResults, onSave, onCancel }: MultiMatc
       map_name: match.mapName,
       match_duration: match.duration,
       hunter_character: match.hunterCharacter,
-      trait_used: traitUsed || undefined,
-      persona: persona || undefined,
-      banned_characters: bannedCharacters.length > 0 ? bannedCharacters : undefined,
+      trait_used: match.useIndividualSettings
+        ? (match.individualTrait || undefined)
+        : (traitUsed || undefined),
+      persona: match.useIndividualSettings
+        ? (match.individualPersona || undefined)
+        : (persona || undefined),
+      banned_characters: match.useIndividualSettings
+        ? (match.individualBannedCharacters && match.individualBannedCharacters.length > 0
+            ? match.individualBannedCharacters
+            : undefined)
+        : (bannedCharacters.length > 0 ? bannedCharacters : undefined),
       played_at: match.playedAt,
       survivors: match.survivors,
     }));
@@ -157,22 +197,43 @@ export function MultiMatchEditor({ analyzeResults, onSave, onCancel }: MultiMatc
             </FormControl>
 
             <FormControl>
-              <FormLabel>BANキャラ（最大3体）</FormLabel>
-              <Wrap spacing={2}>
-                {survivorList?.map((survivor) => (
-                  <WrapItem key={survivor}>
-                    <Checkbox
-                      isChecked={bannedCharacters.includes(survivor)}
-                      onChange={() => handleBanToggle(survivor)}
-                      isDisabled={
-                        !bannedCharacters.includes(survivor) && bannedCharacters.length >= 3
-                      }
-                    >
-                      {survivor}
-                    </Checkbox>
-                  </WrapItem>
-                ))}
-              </Wrap>
+              <HStack justify="space-between" mb={2}>
+                <FormLabel mb={0}>BANキャラ</FormLabel>
+                <HStack spacing={2}>
+                  <Badge colorScheme={bannedCharacters.length === 3 ? 'green' : 'gray'}>
+                    {bannedCharacters.length}/3
+                  </Badge>
+                  {bannedCharacters.length > 0 && (
+                    <Text fontSize="sm" color="gray.600">
+                      {bannedCharacters.join(', ')}
+                    </Text>
+                  )}
+                  <IconButton
+                    aria-label="BANキャラを展開"
+                    icon={isCommonBanOpen ? <ChevronUpIcon /> : <ChevronDownIcon />}
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setIsCommonBanOpen(!isCommonBanOpen)}
+                  />
+                </HStack>
+              </HStack>
+              <Collapse in={isCommonBanOpen} animateOpacity>
+                <Wrap spacing={2}>
+                  {survivorList?.map((survivor) => (
+                    <WrapItem key={survivor}>
+                      <Checkbox
+                        isChecked={bannedCharacters.includes(survivor)}
+                        onChange={() => handleBanToggle(survivor)}
+                        isDisabled={
+                          !bannedCharacters.includes(survivor) && bannedCharacters.length >= 3
+                        }
+                      >
+                        {survivor}
+                      </Checkbox>
+                    </WrapItem>
+                  ))}
+                </Wrap>
+              </Collapse>
             </FormControl>
           </VStack>
         </CardBody>
@@ -245,6 +306,96 @@ export function MultiMatchEditor({ analyzeResults, onSave, onCancel }: MultiMatc
                   </Select>
                 </FormControl>
               </SimpleGrid>
+
+              {/* 個別設定トグル */}
+              <FormControl display="flex" alignItems="center">
+                <FormLabel htmlFor={`individual-${matchIndex}`} mb="0">
+                  この試合だけ個別に設定する
+                </FormLabel>
+                <Switch
+                  id={`individual-${matchIndex}`}
+                  isChecked={match.useIndividualSettings}
+                  onChange={(e) =>
+                    handleMatchChange(matchIndex, 'useIndividualSettings', e.target.checked)
+                  }
+                />
+              </FormControl>
+
+              {/* 個別設定（トグルON時のみ表示） */}
+              <Collapse in={match.useIndividualSettings} animateOpacity>
+                <Card variant="outline" bg="blue.50">
+                  <CardBody>
+                    <VStack spacing={4} align="stretch">
+                      <FormControl>
+                        <FormLabel>特質</FormLabel>
+                        <Select
+                          value={match.individualTrait || ''}
+                          onChange={(e) =>
+                            handleMatchChange(matchIndex, 'individualTrait', e.target.value)
+                          }
+                        >
+                          <option value="">選択してください</option>
+                          {traits?.map((trait) => (
+                            <option key={trait} value={trait}>
+                              {trait}
+                            </option>
+                          ))}
+                        </Select>
+                      </FormControl>
+
+                      <FormControl>
+                        <FormLabel>人格</FormLabel>
+                        <Textarea
+                          value={match.individualPersona || ''}
+                          onChange={(e) =>
+                            handleMatchChange(matchIndex, 'individualPersona', e.target.value)
+                          }
+                          placeholder="使用した人格を入力..."
+                          rows={2}
+                        />
+                      </FormControl>
+
+                      <FormControl>
+                        <HStack justify="space-between" mb={2}>
+                          <FormLabel mb={0}>BANキャラ</FormLabel>
+                          <HStack spacing={2}>
+                            <Badge
+                              colorScheme={
+                                (match.individualBannedCharacters?.length || 0) === 3
+                                  ? 'green'
+                                  : 'gray'
+                              }
+                            >
+                              {match.individualBannedCharacters?.length || 0}/3
+                            </Badge>
+                            {(match.individualBannedCharacters?.length || 0) > 0 && (
+                              <Text fontSize="sm" color="gray.600">
+                                {match.individualBannedCharacters?.join(', ')}
+                              </Text>
+                            )}
+                          </HStack>
+                        </HStack>
+                        <Wrap spacing={2}>
+                          {survivorList?.map((survivor) => (
+                            <WrapItem key={survivor}>
+                              <Checkbox
+                                isChecked={match.individualBannedCharacters?.includes(survivor)}
+                                onChange={() => handleIndividualBanToggle(matchIndex, survivor)}
+                                isDisabled={
+                                  !match.individualBannedCharacters?.includes(survivor) &&
+                                  (match.individualBannedCharacters?.length || 0) >= 3
+                                }
+                              >
+                                {survivor}
+                              </Checkbox>
+                            </WrapItem>
+                          ))}
+                        </Wrap>
+                      </FormControl>
+                    </VStack>
+                  </CardBody>
+                </Card>
+              </Collapse>
 
               <Divider />
 

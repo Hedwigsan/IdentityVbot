@@ -18,7 +18,11 @@ import {
   WrapItem,
   Checkbox,
   Textarea,
+  Collapse,
+  IconButton,
+  Text,
 } from '@chakra-ui/react';
+import { ChevronDownIcon, ChevronUpIcon } from '@chakra-ui/icons';
 import { useQuery } from '@tanstack/react-query';
 import { masterApi } from '../../services/api';
 import type { AnalyzeResponse, MatchCreateRequest, SurvivorData } from '../../types';
@@ -37,6 +41,7 @@ export function MatchEditor({ analyzeResult, onSave, onCancel }: MatchEditorProp
   const [traitUsed, setTraitUsed] = useState('');
   const [persona, setPersona] = useState('');
   const [bannedCharacters, setBannedCharacters] = useState<string[]>([]);
+  const [isBanOpen, setIsBanOpen] = useState(false);
   const [survivors, setSurvivors] = useState<SurvivorData[]>(analyzeResult.survivors || []);
 
   // マスターデータ取得
@@ -178,27 +183,43 @@ export function MatchEditor({ analyzeResult, onSave, onCancel }: MatchEditorProp
         <CardHeader>
           <HStack justify="space-between">
             <Heading size="md">Banキャラ</Heading>
-            <Badge colorScheme={bannedCharacters.length === 3 ? 'green' : 'gray'}>
-              {bannedCharacters.length}/3
-            </Badge>
+            <HStack spacing={2}>
+              <Badge colorScheme={bannedCharacters.length === 3 ? 'green' : 'gray'}>
+                {bannedCharacters.length}/3
+              </Badge>
+              {bannedCharacters.length > 0 && (
+                <Text fontSize="sm" color="gray.600">
+                  {bannedCharacters.join(', ')}
+                </Text>
+              )}
+              <IconButton
+                aria-label="BANキャラを展開"
+                icon={isBanOpen ? <ChevronUpIcon /> : <ChevronDownIcon />}
+                size="sm"
+                variant="ghost"
+                onClick={() => setIsBanOpen(!isBanOpen)}
+              />
+            </HStack>
           </HStack>
         </CardHeader>
         <CardBody>
-          <Wrap spacing={2}>
-            {survivorList?.map((survivor) => (
-              <WrapItem key={survivor}>
-                <Checkbox
-                  isChecked={bannedCharacters.includes(survivor)}
-                  onChange={() => handleBanToggle(survivor)}
-                  isDisabled={
-                    !bannedCharacters.includes(survivor) && bannedCharacters.length >= 3
-                  }
-                >
-                  {survivor}
-                </Checkbox>
-              </WrapItem>
-            ))}
-          </Wrap>
+          <Collapse in={isBanOpen} animateOpacity>
+            <Wrap spacing={2}>
+              {survivorList?.map((survivor) => (
+                <WrapItem key={survivor}>
+                  <Checkbox
+                    isChecked={bannedCharacters.includes(survivor)}
+                    onChange={() => handleBanToggle(survivor)}
+                    isDisabled={
+                      !bannedCharacters.includes(survivor) && bannedCharacters.length >= 3
+                    }
+                  >
+                    {survivor}
+                  </Checkbox>
+                </WrapItem>
+              ))}
+            </Wrap>
+          </Collapse>
         </CardBody>
       </Card>
 
