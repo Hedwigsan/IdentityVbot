@@ -25,9 +25,10 @@ app.add_middleware(
         "http://localhost:3000",
         "http://192.168.11.5:5173",  # ネットワーク経由のアクセス
         "https://identity-vbot.vercel.app",  # Vercel本番環境
+        "https://identity-archive.vercel.app",  # Vercel本番環境（新）
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
