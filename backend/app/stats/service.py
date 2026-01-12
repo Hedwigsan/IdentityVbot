@@ -44,12 +44,16 @@ class StatsService:
             else:
                 losses += 1
 
+        # 勝率は引き分けを除外して計算
+        total_excluding_draws = total - draws
+        win_rate = (wins / total_excluding_draws * 100) if total_excluding_draws > 0 else 0
+
         return {
             "total_matches": total,
             "wins": wins,
             "draws": draws,
             "losses": losses,
-            "win_rate": f"{(wins/total*100):.1f}%" if total > 0 else "0%"
+            "win_rate": f"{win_rate:.1f}%"
         }
 
     def get_survivor_pick_rates(self, user_id: str, hunter: str = None, trait: str = None, limit: int = None, persona: str = None, banned_characters: List[str] = None) -> List[Dict]:
@@ -165,7 +169,9 @@ class StatsService:
         # 結果を整形
         result = []
         for char, stats in survivor_stats.items():
-            win_rate = (stats["wins"] / stats["total"] * 100) if stats["total"] > 0 else 0
+            # 勝率は引き分けを除外して計算
+            total_excluding_draws = stats["total"] - stats["draws"]
+            win_rate = (stats["wins"] / total_excluding_draws * 100) if total_excluding_draws > 0 else 0
             result.append({
                 "character": char,
                 "total": stats["total"],
@@ -295,7 +301,9 @@ class StatsService:
 
         result = []
         for map_name, stats in map_stats.items():
-            win_rate = (stats["wins"] / stats["total"] * 100) if stats["total"] > 0 else 0
+            # 勝率は引き分けを除外して計算
+            total_excluding_draws = stats["total"] - stats["draws"]
+            win_rate = (stats["wins"] / total_excluding_draws * 100) if total_excluding_draws > 0 else 0
             result.append({
                 "map_name": map_name,
                 "total": stats["total"],
