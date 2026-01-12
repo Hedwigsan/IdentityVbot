@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import Optional
 from ..database import get_supabase
 from .dependencies import get_current_user
+from ..config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +49,9 @@ async def login(request: LoginRequest):
     フロントエンドはこのURLにリダイレクトしてGoogleログインを開始
     """
     try:
+        settings = get_settings()
         supabase = get_supabase()
-        redirect_to = request.redirect_url or "http://localhost:5173/auth/callback"
+        redirect_to = request.redirect_url or f"{settings.frontend_url}/auth/callback"
 
         response = supabase.auth.sign_in_with_oauth({
             "provider": "google",
