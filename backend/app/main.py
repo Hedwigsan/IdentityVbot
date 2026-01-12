@@ -6,6 +6,7 @@ from .matches.router import router as matches_router
 from .master_router import router as master_router
 from .ocr.router import router as ocr_router
 from .stats.router import router as stats_router
+from .layouts.router import router as layouts_router
 
 settings = get_settings()
 
@@ -36,6 +37,7 @@ app.include_router(matches_router)
 app.include_router(master_router)
 app.include_router(ocr_router)
 app.include_router(stats_router)
+app.include_router(layouts_router)
 
 
 @app.get("/")

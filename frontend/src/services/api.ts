@@ -11,6 +11,8 @@ import type {
   MapStats,
   LoginResponse,
   TokenResponse,
+  DeviceLayout,
+  DeviceLayoutCreate,
 } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
@@ -86,6 +88,17 @@ export const matchesApi = {
     const { data } = await api.post('/api/matches/analyze', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 60000, // OCRは時間がかかるので60秒
+    });
+    return data;
+  },
+
+  analyzeWithLayout: async (file: File, layout: DeviceLayoutCreate['icon_positions']): Promise<AnalyzeResponse> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('layout', JSON.stringify(layout));
+    const { data } = await api.post('/api/matches/analyze-with-layout', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
     });
     return data;
   },
@@ -189,6 +202,26 @@ export const masterApi = {
 
   getMaps: async (): Promise<string[]> => {
     const { data } = await api.get('/api/master/maps');
+    return data;
+  },
+};
+
+// レイアウトAPI
+export const layoutApi = {
+  getBestLayout: async (aspectRatio: number, tolerance: number = 0.05): Promise<DeviceLayout | null> => {
+    const { data } = await api.get('/api/layouts/best', {
+      params: { aspect_ratio: aspectRatio, tolerance },
+    });
+    return data;
+  },
+
+  saveLayout: async (layout: DeviceLayoutCreate): Promise<DeviceLayout> => {
+    const { data } = await api.post('/api/layouts/save', layout);
+    return data;
+  },
+
+  voteLayout: async (layoutId: string): Promise<DeviceLayout> => {
+    const { data } = await api.post('/api/layouts/vote', { layout_id: layoutId });
     return data;
   },
 };

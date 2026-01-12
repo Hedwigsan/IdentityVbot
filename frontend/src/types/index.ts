@@ -114,3 +114,28 @@ export interface TokenResponse {
   expires_in: number;
   token_type: string;
 }
+
+// デバイスレイアウト
+export interface IconPosition {
+  x_ratio: number;
+  y_ratio: number;
+  size_ratio: number;
+}
+
+export interface DeviceLayout {
+  id: string;
+  aspect_ratio: number;
+  screen_width: number;
+  screen_height: number;
+  icon_positions: IconPosition[];
+  vote_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DeviceLayoutCreate {
+  aspect_ratio: number;
+  screen_width: number;
+  screen_height: number;
+  icon_positions: IconPosition[];
+}

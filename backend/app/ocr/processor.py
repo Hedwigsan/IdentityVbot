@@ -1,5 +1,4 @@
 import logging
-import easyocr
 import cv2
 import numpy as np
 from typing import Dict, List, Tuple, Optional
@@ -8,46 +7,26 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# yomitokuのインポート（オプション）
-try:
-    from yomitoku import DocumentAnalyzer  # type: ignore
-    YOMITOKU_AVAILABLE = True
-except ImportError:
-    YOMITOKU_AVAILABLE = False
-    DocumentAnalyzer = None  # type: ignore
-
 class OCRProcessor:
-    def __init__(self, use_yomitoku=True, templates_path: str = None):
-        self.use_yomitoku = use_yomitoku and YOMITOKU_AVAILABLE
-        self.reader = None  # easyocrのreaderを初期化
+    def __init__(self, templates_path: str = None, supabase_client=None):
         self.templates_path = templates_path or "templates/icons"
+        self.supabase = supabase_client  # Supabaseクライアント（レイアウト取得用）
 
-        if self.use_yomitoku:
-            try:
-                logger.info("[INFO] Initializing yomitoku...")
-                self.yomitoku_analyzer = DocumentAnalyzer(device='cpu')  # GPUを使う場合は 'cuda'
-                logger.info("[SUCCESS] Using yomitoku OCR")
-            except Exception as e:
-                logger.warning(f"[WARNING] Failed to initialize yomitoku: {e}")
-                logger.info("[INFO] Falling back to easyocr")
-                self.use_yomitoku = False
-                self.reader = easyocr.Reader(['ja', 'en'], gpu=False)
-        else:
-            if not YOMITOKU_AVAILABLE:
-                logger.warning("[WARNING] yomitoku not installed. Using easyocr")
-            self.reader = easyocr.Reader(['ja', 'en'], gpu=False)
+        # yomitokuは遅延ロード（初回OCR実行時に初期化）
+        self._yomitoku_analyzer = None
+        logger.info("[INFO] OCRProcessor initialized (yomitoku will be loaded on first use)")
 
         # キャラアイコンのテンプレート画像（必須）
         self.survivor_templates = {}  # サバイバーアイコン
         self.hunter_templates = {}    # ハンターアイコン
         self._load_icon_templates()
-        
+
         # マップ名リスト
         self.map_names = [
             "聖心病院", "軍需工場", "赤の教会", "湖景村",
             "月の河公園", "中華街", "罪の森", "永眠町", "レオの思い出"
         ]
-        
+
         # 画面レイアウトの設定（相対座標）
         self.layout = {
             "icon_x_ratio": (0.23, 0.34),  # アイコンのX座標範囲（iPad調整済み: 0.23から開始）
@@ -57,7 +36,17 @@ class OCRProcessor:
             "icon_y_offset_ratio": 0.02,    # アイコンY座標のオフセット（画面高さの2%下に）
             "use_auto_detect": False,        # 自動検出を無効化（固定座標を使用）
         }
-    
+
+    @property
+    def yomitoku_analyzer(self):
+        """yomitokuの遅延ロード"""
+        if self._yomitoku_analyzer is None:
+            from yomitoku import DocumentAnalyzer  # type: ignore
+            logger.info("[INFO] Initializing yomitoku...")
+            self._yomitoku_analyzer = DocumentAnalyzer(device='cpu')
+            logger.info("[SUCCESS] yomitoku loaded")
+        return self._yomitoku_analyzer
+
     def _load_icon_templates(self):
         """キャラアイコンのテンプレート画像を読み込み（必須）"""
         base_dir = Path(self.templates_path)
@@ -85,15 +74,8 @@ class OCRProcessor:
                             template = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
                             if template is not None:
-                                self.survivor_templates[char_name] = {
-                                    'original': template,
-                                    'sizes': [
-                                        cv2.resize(template, (60, 60)),
-                                        cv2.resize(template, (70, 70)),
-                                        cv2.resize(template, (80, 80)),
-                                        cv2.resize(template, (90, 90)),
-                                    ]
-                                }
+                                # オリジナル画像のみ保持（リサイズは必要時に実行）
+                                self.survivor_templates[char_name] = template
                         except Exception as e:
                             logger.warning(f"[WARNING] Failed to load {char_name}: {e}")
 
@@ -122,34 +104,44 @@ class OCRProcessor:
                     continue
 
                 if template is not None:
-                    templates_dict[char_name] = {
-                        'original': template,
-                        'sizes': [
-                            cv2.resize(template, (60, 60)),
-                            cv2.resize(template, (70, 70)),
-                            cv2.resize(template, (80, 80)),
-                            cv2.resize(template, (90, 90)),
-                        ]
-                    }
+                    # オリジナル画像のみ保持（リサイズは必要時に実行）
+                    templates_dict[char_name] = template
     
-    def process_image(self, image_bytes: bytes) -> Dict:
-        """画像から試合データを抽出"""
+    def process_image(self, image_bytes: bytes, custom_layout: Optional[List[Dict]] = None) -> Dict:
+        """画像から試合データを抽出
+
+        Args:
+            image_bytes: 画像データ
+            custom_layout: カスタムレイアウト（オプション）
+                           [{"x_ratio": 0.23, "y_ratio": 0.33, "size_ratio": 0.062}, ...]
+
+        Returns:
+            試合データ辞書
+        """
         nparr = np.frombuffer(image_bytes, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
         if img is None:
             raise Exception("画像の読み込みに失敗しました")
 
-        # OCR実行
-        if self.use_yomitoku:
+        # カスタムレイアウトを一時的に保存
+        _original_custom_layout = getattr(self, '_custom_layout', None)
+        if custom_layout:
+            self._custom_layout = custom_layout
+            logger.info(f"[CUSTOM LAYOUT] Using provided layout with {len(custom_layout)} positions")
+
+        try:
+            # OCR実行
             results = self._run_yomitoku_ocr(img)
-        else:
-            results = self._run_easyocr(img)
 
-        # データ構造化
-        match_data = self._parse_match_data(results, img)
+            # データ構造化
+            match_data = self._parse_match_data(results, img)
 
-        return match_data
+            return match_data
+        finally:
+            # カスタムレイアウトをクリア
+            if custom_layout:
+                self._custom_layout = _original_custom_layout
 
     def _run_yomitoku_ocr(self, img: np.ndarray) -> List:
         """yomitokuでOCR実行"""
@@ -302,32 +294,11 @@ class OCRProcessor:
             return ocr_results
 
         except Exception as e:
-            logger.warning(f"[WARNING] yomitoku OCR failed: {e}")
+            logger.error(f"[ERROR] yomitoku OCR failed: {e}")
             import traceback
             traceback.print_exc()
-            logger.info("[INFO] Falling back to easyocr...")
-            return self._run_easyocr(img)
+            raise Exception(f"OCR処理に失敗しました: {e}")
 
-    def _run_easyocr(self, img: np.ndarray) -> List:
-        """easyocrでOCR実行（フォールバック）"""
-        # readerが初期化されていない場合は初期化
-        if self.reader is None:
-            logger.info("[INFO] Initializing easyocr...")
-            self.reader = easyocr.Reader(['ja', 'en'], gpu=False)
-
-        results = self.reader.readtext(
-            img,
-            paragraph=False,  # 段落検出を無効化
-            min_size=5,       # 最小テキストサイズを小さく
-            text_threshold=0.6,  # テキスト検出閾値を下げる
-            low_text=0.3,     # 低信頼度テキストも検出
-            link_threshold=0.3,  # リンク閾値を下げる
-            canvas_size=2560,  # キャンバスサイズを大きく
-            mag_ratio=1.5     # 拡大率
-        )
-        logger.info(f"[SUCCESS] easyocr detected {len(results)} text blocks")
-        return results
-    
     def _parse_match_data(self, results: List, img: np.ndarray) -> Dict:
         """OCR結果から試合データを抽出"""
         height, width = img.shape[:2]
@@ -738,6 +709,31 @@ class OCRProcessor:
 
         return data
     
+    def _match_template_with_scales(self, icon_region: np.ndarray, original: np.ndarray, scales: List[float]) -> float:
+        """複数スケールでテンプレートマッチングを実行し、最高スコアを返す"""
+        max_score = 0.0
+        orig_h, orig_w = original.shape[:2]
+
+        for scale in scales:
+            new_size = (int(orig_w * scale), int(orig_h * scale))
+            # サイズが適切な範囲かチェック
+            if not (30 <= new_size[0] <= 150 and 30 <= new_size[1] <= 150):
+                continue
+            # テンプレートがアイコン領域より大きい場合はスキップ
+            if new_size[1] > icon_region.shape[0] or new_size[0] > icon_region.shape[1]:
+                continue
+
+            try:
+                template = cv2.resize(original, new_size)
+                result = cv2.matchTemplate(icon_region, template, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, _ = cv2.minMaxLoc(result)
+                if max_val > max_score:
+                    max_score = max_val
+            except cv2.error:
+                continue
+
+        return max_score
+
     def _match_character_icon(self, img: np.ndarray, x: int, y: int, width: int = 100, height: int = 100) -> Tuple[Optional[str], Optional[str]]:
         """
         指定座標周辺のキャラアイコンを画像マッチングで識別
@@ -770,78 +766,21 @@ class OCRProcessor:
         # 各キャラクターのベストスコアを記録 (キャラ名: (スコア, タイプ))
         char_scores = {}
 
+        # マッチング用のスケール（必要時にリサイズ）
+        scales = [0.5, 0.7, 0.9, 1.0, 1.1, 1.3, 1.5]
+
         # サバイバーをチェック
-        for char_name, template_data in self.survivor_templates.items():
-            max_score_for_char = 0.0
-
-            # より多くのサイズで試す
-            sizes = template_data['sizes']
-            original = template_data['original']
-
-            # 追加のスケールも試す（元のサイズに基づく）
-            orig_h, orig_w = original.shape[:2]
-            scales = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]
-            extra_sizes = []
-            for scale in scales:
-                new_size = (int(orig_w * scale), int(orig_h * scale))
-                if 30 <= new_size[0] <= 150 and 30 <= new_size[1] <= 150:
-                    extra_sizes.append(cv2.resize(original, new_size))
-
-            all_templates = sizes + extra_sizes
-
-            for template in all_templates:
-                # テンプレートがアイコン領域より大きい場合はスキップ
-                if template.shape[0] > icon_region.shape[0] or template.shape[1] > icon_region.shape[1]:
-                    continue
-
-                # TM_CCOEFF_NORMEDが最も信頼性が高い
-                try:
-                    result = cv2.matchTemplate(icon_region, template, cv2.TM_CCOEFF_NORMED)
-                    _, max_val, _, _ = cv2.minMaxLoc(result)
-
-                    if max_val > max_score_for_char:
-                        max_score_for_char = max_val
-
-                except cv2.error:
-                    continue
-
+        for char_name, original in self.survivor_templates.items():
+            max_score_for_char = self._match_template_with_scales(
+                icon_region, original, scales
+            )
             char_scores[char_name] = (max_score_for_char, "survivor")
 
         # ハンターをチェック
-        for char_name, template_data in self.hunter_templates.items():
-            max_score_for_char = 0.0
-
-            # より多くのサイズで試す
-            sizes = template_data['sizes']
-            original = template_data['original']
-
-            # 追加のスケールも試す（元のサイズに基づく）
-            orig_h, orig_w = original.shape[:2]
-            scales = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]
-            extra_sizes = []
-            for scale in scales:
-                new_size = (int(orig_w * scale), int(orig_h * scale))
-                if 30 <= new_size[0] <= 150 and 30 <= new_size[1] <= 150:
-                    extra_sizes.append(cv2.resize(original, new_size))
-
-            all_templates = sizes + extra_sizes
-
-            for template in all_templates:
-                # テンプレートがアイコン領域より大きい場合はスキップ
-                if template.shape[0] > icon_region.shape[0] or template.shape[1] > icon_region.shape[1]:
-                    continue
-
-                # TM_CCOEFF_NORMEDが最も信頼性が高い
-                try:
-                    result = cv2.matchTemplate(icon_region, template, cv2.TM_CCOEFF_NORMED)
-                    _, max_val, _, _ = cv2.minMaxLoc(result)
-
-                    if max_val > max_score_for_char:
-                        max_score_for_char = max_val
-
-                except cv2.error:
-                    continue
-
+        for char_name, original in self.hunter_templates.items():
+            max_score_for_char = self._match_template_with_scales(
+                icon_region, original, scales
+            )
             char_scores[char_name] = (max_score_for_char, "hunter")
 
         # スコアが最も高いキャラクターを選択
@@ -888,6 +827,72 @@ class OCRProcessor:
 
         # アスペクト比に基づいて画面タイプを判定
         logger.debug(f"[SCREEN] Size: {width}x{height}, Aspect ratio: {aspect_ratio:.3f}")
+
+        # カスタムレイアウトを優先的に使用
+        custom_layout = getattr(self, '_custom_layout', None)
+        if custom_layout and len(custom_layout) == 5:
+            logger.info("[CUSTOM LAYOUT] Using provided custom layout")
+            positions = []
+            for i, icon_pos in enumerate(custom_layout):
+                # フロントエンドから渡される座標はアイコンの中心座標
+                # アイコンの左上座標に変換する
+                icon_size = int(width * icon_pos['size_ratio'])
+                center_x = int(width * icon_pos['x_ratio'])
+                center_y = int(height * icon_pos['y_ratio'])
+                x = center_x - icon_size // 2
+                y = center_y - icon_size // 2
+
+                logger.debug(f"[CUSTOM LAYOUT] Position {i+1}: center=({center_x}, {center_y}) -> top-left=({x}, {y}), size={icon_size}")
+                positions.append((x, y, icon_size, icon_size))
+
+            logger.debug(f"[SCREEN TYPE] Custom layout")
+
+            if match_result == "敗北":
+                logger.debug(f"[POSITION] Detecting 5 positions (defeat: survivors 1-4, then hunter)")
+            else:
+                logger.debug(f"[POSITION] Detecting 5 positions (victory: hunter, then survivors 1-4)")
+
+            return positions
+
+        # データベースからレイアウトを取得（Supabaseクライアントがある場合）
+        db_layout = None
+        if self.supabase:
+            try:
+                from ..layouts.service import LayoutService
+                layout_service = LayoutService(self.supabase)
+                db_layout = layout_service.get_best_layout(aspect_ratio, tolerance=0.05)
+
+                if db_layout:
+                    logger.info(f"[DATABASE] Using layout from database (ID: {db_layout.id}, votes: {db_layout.vote_count})")
+            except Exception as e:
+                logger.warning(f"[WARNING] Failed to get layout from database: {e}")
+
+        # データベースからレイアウトが取得できた場合
+        if db_layout and len(db_layout.icon_positions) == 5:
+            positions = []
+            for i, icon_pos in enumerate(db_layout.icon_positions):
+                # データベースに保存された座標はアイコンの中心座標
+                # アイコンの左上座標に変換する
+                icon_size = int(width * icon_pos.size_ratio)
+                center_x = int(width * icon_pos.x_ratio)
+                center_y = int(height * icon_pos.y_ratio)
+                x = center_x - icon_size // 2
+                y = center_y - icon_size // 2
+
+                logger.debug(f"[DATABASE] Position {i+1}: center=({center_x}, {center_y}) -> top-left=({x}, {y}), size={icon_size}")
+                positions.append((x, y, icon_size, icon_size))
+
+            logger.debug(f"[SCREEN TYPE] Database layout (aspect_ratio: {db_layout.aspect_ratio})")
+
+            if match_result == "敗北":
+                logger.debug(f"[POSITION] Detecting 5 positions (defeat: survivors 1-4, then hunter)")
+            else:
+                logger.debug(f"[POSITION] Detecting 5 positions (victory: hunter, then survivors 1-4)")
+
+            return positions
+
+        # フォールバック: 従来のアスペクト比ベースの判定
+        logger.info("[FALLBACK] Using default aspect ratio-based layout")
 
         # Y座標オフセットを取得（デフォルトは0）
         y_offset = int(height * self.layout.get('icon_y_offset_ratio', 0.0))

@@ -16,7 +16,7 @@ import { matchesApi } from '../../services/api';
 import type { AnalyzeResponse } from '../../types';
 
 interface ImageUploaderProps {
-  onAnalyzeComplete: (results: AnalyzeResponse[]) => void;
+  onAnalyzeComplete: (results: AnalyzeResponse[], file?: File) => void;
 }
 
 export function ImageUploader({ onAnalyzeComplete }: ImageUploaderProps) {
@@ -54,7 +54,8 @@ export function ImageUploader({ onAnalyzeComplete }: ImageUploaderProps) {
         if (results.length === 0) {
           setError('すべての画像の解析に失敗しました。もう一度お試しください。');
         } else {
-          onAnalyzeComplete(results);
+          // 単一ファイルの場合、ファイル情報も渡す
+          onAnalyzeComplete(results, acceptedFiles.length === 1 ? acceptedFiles[0] : undefined);
         }
       } catch (err) {
         console.error('Analyze error:', err);

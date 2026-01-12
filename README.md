@@ -130,6 +130,8 @@ CREATE INDEX idx_survivors_match ON survivors(match_id);
 
 3. Authentication → Providers で Google OAuth を設定
 
+4. マイグレーション実行（`backend/migrations/001_create_device_layouts.sql`の内容をSQL Editorで実行）
+
 ### 2. バックエンド
 
 ```bash
