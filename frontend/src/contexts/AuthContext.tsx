@@ -26,6 +26,7 @@ interface AuthContextType {
   login: () => Promise<void>;
   logout: () => Promise<void>;
   refetch: () => Promise<void>;
+  resetSession: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -260,6 +261,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, []);
 
+  // セッションリセット（問題発生時のリカバリー用）
+  const resetSession = useCallback(async () => {
+    console.log('セッションをリセットします');
+    await clearAllAuthData();
+    // ページをリロードして完全にリセット
+    window.location.reload();
+  }, [clearAllAuthData]);
+
   const value: AuthContextType = {
     user,
     isLoading,
@@ -267,6 +276,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     login,
     logout,
     refetch: fetchUser,
+    resetSession,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

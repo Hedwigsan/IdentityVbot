@@ -59,7 +59,7 @@ export default function App() {
         />
       )}
 
-      <Box as="main" maxW="1200px" mx="auto" px={hideHeaderFooter ? 0 : 4} py={hideHeaderFooter ? 0 : 6} flex="1">
+      <Box as="main" px={hideHeaderFooter ? 0 : 4} py={hideHeaderFooter ? 0 : 6} flex="1" w="100%">
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
