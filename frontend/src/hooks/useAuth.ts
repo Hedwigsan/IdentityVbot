@@ -51,7 +51,50 @@ export function useAuth() {
       }
     });
 
-    return () => subscription.unsubscribe();
+    // トークンの有効期限を定期的にチェック（5分ごと）
+    const tokenCheckInterval = setInterval(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (!session) {
+          // セッションが無効な場合はログアウト
+          console.warn('セッションが無効です。ログアウトします。');
+          setUser(null);
+          setIsAuthenticated(false);
+          localStorage.removeItem('access_token');
+          return;
+        }
+
+        // トークンの有効期限をチェック（有効期限の1時間前にリフレッシュ）
+        const expiresAt = session.expires_at;
+        if (expiresAt) {
+          const expiresInMs = expiresAt * 1000 - Date.now();
+          const oneHourInMs = 60 * 60 * 1000;
+
+          if (expiresInMs < oneHourInMs) {
+            console.log('トークンをリフレッシュします');
+            const { data: { session: newSession }, error } = await supabase.auth.refreshSession();
+
+            if (error || !newSession) {
+              console.error('トークンのリフレッシュに失敗しました', error);
+              setUser(null);
+              setIsAuthenticated(false);
+              localStorage.removeItem('access_token');
+            } else {
+              localStorage.setItem('access_token', newSession.access_token);
+              console.log('トークンをリフレッシュしました');
+            }
+          }
+        }
+      } catch (error) {
+        console.error('トークンチェックエラー:', error);
+      }
+    }, 5 * 60 * 1000); // 5分ごと
+
+    return () => {
+      subscription.unsubscribe();
+      clearInterval(tokenCheckInterval);
+    };
   }, [fetchUser]);
 
   // ログイン開始（Supabase Client経由）

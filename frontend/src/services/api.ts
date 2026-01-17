@@ -42,14 +42,21 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// レスポンスインターセプター（トークンリフレッシュ）
+// レスポンスインターセプター（401エラー時の自動ログアウト）
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error.response?.status === 401) {
-      // トークン期限切れの場合はログアウト
+      // トークン期限切れまたは無効なトークンの場合は自動ログアウト
+      console.warn('401 Unauthorized: トークンが無効です。自動ログアウトします。');
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
+
+      // Supabaseセッションもクリア
+      const { supabase } = await import('../lib/supabase');
+      await supabase.auth.signOut();
+
+      // ログインページにリダイレクト
       window.location.href = '/';
     }
     return Promise.reject(error);
