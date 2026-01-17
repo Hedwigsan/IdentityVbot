@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Box, Spinner, Center } from '@chakra-ui/react';
 import { Header } from './components/common/Header';
+import { Footer } from './components/common/Footer';
 import { AnimatedBackground } from './components/common/AnimatedBackground';
 import { useAuth } from './hooks/useAuth';
 import { RecordPage } from './pages/RecordPage';
@@ -10,6 +11,8 @@ import { SettingsPage } from './pages/SettingsPage';
 import { HelpPage } from './pages/HelpPage';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import { LoginPage } from './pages/LoginPage';
+import { TermsPage } from './pages/TermsPage';
+import { PrivacyPage } from './pages/PrivacyPage';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -33,8 +36,8 @@ export default function App() {
   const { user, isAuthenticated, isLoading, login, logout } = useAuth();
   const location = useLocation();
 
-  // ログイン画面とコールバック画面ではヘッダーを非表示
-  const hideHeader = location.pathname === '/login' || location.pathname === '/auth/callback';
+  // ログイン画面とコールバック画面ではヘッダー・フッターを非表示
+  const hideHeaderFooter = location.pathname === '/login' || location.pathname === '/auth/callback';
 
   if (isLoading) {
     return (
@@ -45,9 +48,9 @@ export default function App() {
   }
 
   return (
-    <Box minH="100vh">
+    <Box minH="100vh" display="flex" flexDirection="column">
       <AnimatedBackground />
-      {!hideHeader && (
+      {!hideHeaderFooter && (
         <Header
           user={user}
           isAuthenticated={isAuthenticated}
@@ -56,10 +59,12 @@ export default function App() {
         />
       )}
 
-      <Box as="main" maxW="1200px" mx="auto" px={hideHeader ? 0 : 4} py={hideHeader ? 0 : 6}>
+      <Box as="main" maxW="1200px" mx="auto" px={hideHeaderFooter ? 0 : 4} py={hideHeaderFooter ? 0 : 6} flex="1">
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
 
           <Route
             path="/"
@@ -111,6 +116,8 @@ export default function App() {
           />
         </Routes>
       </Box>
+
+      {!hideHeaderFooter && <Footer />}
     </Box>
   );
 }

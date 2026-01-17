@@ -43,6 +43,8 @@ export function Header({ user, isAuthenticated, onLogin, onLogout }: HeaderProps
       textColor: '#fff',
       links: [
         { label: 'ヘルプ', href: '/help', onClick: () => handleNavigation('/help') },
+        { label: '利用規約', href: '/terms', onClick: () => handleNavigation('/terms') },
+        { label: 'プライバシーポリシー', href: '/privacy', onClick: () => handleNavigation('/privacy') },
         { label: 'ログアウト', href: '#', onClick: onLogout },
       ]
     }
