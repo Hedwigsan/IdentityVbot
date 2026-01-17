@@ -40,6 +40,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const forceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFetchingRef = useRef(false);
+  const authErrorCountRef = useRef(0);
+  const hasInitializedRef = useRef(false);
+
+  // 認証エラーの最大回数（これを超えたらセッションをクリア）
+  const MAX_AUTH_ERRORS = 3;
 
   // 強制ロード解除タイマーをクリア
   const clearForceTimeout = useCallback(() => {
@@ -47,6 +52,30 @@ export function AuthProvider({ children }: AuthProviderProps) {
       clearTimeout(forceTimeoutRef.current);
       forceTimeoutRef.current = null;
     }
+  }, []);
+
+  // セッションを完全にクリア
+  const clearAllAuthData = useCallback(async () => {
+    console.warn('認証データをクリアします');
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // エラーを無視
+    }
+    localStorage.removeItem('access_token');
+    // Supabaseのローカルストレージキーをクリア
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('sb-') || key.includes('supabase'))) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+    setUser(null);
+    setIsAuthenticated(false);
+    setIsLoading(false);
+    authErrorCountRef.current = 0;
   }, []);
 
   // ユーザー情報を取得（タイムアウト付き、重複実行防止）
@@ -59,17 +88,28 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     try {
       // Supabaseセッション取得（タイムアウト付き）
-      const { data: { session } } = await withTimeout(
+      const { data: { session }, error: sessionError } = await withTimeout(
         supabase.auth.getSession(),
         AUTH_TIMEOUT_MS,
         'セッション取得がタイムアウトしました'
       );
+
+      // セッション取得でエラーが発生した場合
+      if (sessionError) {
+        console.error('Session error:', sessionError);
+        authErrorCountRef.current++;
+        if (authErrorCountRef.current >= MAX_AUTH_ERRORS) {
+          await clearAllAuthData();
+          return;
+        }
+      }
 
       if (!session) {
         setIsLoading(false);
         setIsAuthenticated(false);
         setUser(null);
         clearForceTimeout();
+        authErrorCountRef.current = 0;
         return;
       }
 
@@ -85,8 +125,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
       );
       setUser(userData);
       setIsAuthenticated(true);
+      authErrorCountRef.current = 0; // 成功したらリセット
     } catch (error) {
       console.error('Fetch user error:', error);
+      authErrorCountRef.current++;
+
+      // エラーが連続で発生した場合はセッションをクリア
+      if (authErrorCountRef.current >= MAX_AUTH_ERRORS) {
+        console.warn(`認証エラーが${MAX_AUTH_ERRORS}回連続で発生しました。セッションをクリアします。`);
+        await clearAllAuthData();
+        return;
+      }
+
       setIsAuthenticated(false);
       setUser(null);
     } finally {
@@ -94,15 +144,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
       clearForceTimeout();
       isFetchingRef.current = false;
     }
-  }, [clearForceTimeout]);
+  }, [clearForceTimeout, clearAllAuthData]);
 
   useEffect(() => {
-    // 強制タイムアウト: 10秒経過してもisLoadingがtrueの場合は強制解除
-    forceTimeoutRef.current = setTimeout(() => {
-      console.warn('認証チェックが10秒以上かかっています。強制的にロード状態を解除します。');
-      setIsLoading(false);
-      setIsAuthenticated(false);
-      setUser(null);
+    // 既に初期化済みの場合はスキップ（StrictModeでの二重実行対策）
+    if (hasInitializedRef.current) {
+      return;
+    }
+    hasInitializedRef.current = true;
+
+    // 強制タイムアウト: 10秒経過してもisLoadingがtrueの場合は強制解除＆セッションクリア
+    forceTimeoutRef.current = setTimeout(async () => {
+      console.warn('認証チェックが10秒以上かかっています。セッションをクリアします。');
+      await clearAllAuthData();
       isFetchingRef.current = false;
     }, FORCE_LOADING_TIMEOUT_MS);
 
@@ -110,7 +164,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     // Supabaseの認証状態変更を監視
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event: AuthChangeEvent, session: Session | null) => {
+      (event: AuthChangeEvent, session: Session | null) => {
+        // SIGNED_OUTイベントでは何もしない（すでにクリア済み）
+        if (event === 'SIGNED_OUT') {
+          setUser(null);
+          setIsAuthenticated(false);
+          localStorage.removeItem('access_token');
+          return;
+        }
+
         if (session) {
           localStorage.setItem('access_token', session.access_token);
           // 少し遅延させて状態が安定してからfetchUser
@@ -166,7 +228,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       clearInterval(tokenCheckInterval);
       clearForceTimeout();
     };
-  }, [fetchUser, clearForceTimeout]);
+  }, [fetchUser, clearForceTimeout, clearAllAuthData]);
 
   // ログイン開始（Supabase Client経由）
   const login = useCallback(async () => {
