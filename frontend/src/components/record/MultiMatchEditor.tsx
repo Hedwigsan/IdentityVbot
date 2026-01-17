@@ -92,56 +92,28 @@ export function MultiMatchEditor({ analyzeResults, onSave, onCancel }: MultiMatc
     queryFn: masterApi.getMaps,
   });
 
-  // 共通設定変更時に、空欄の個別設定のみを埋める
-  const handleTraitChange = (newTrait: string) => {
-    setTraitUsed(newTrait);
-    if (newTrait) {
-      setMatches(prevMatches =>
-        prevMatches.map(match => ({
-          ...match,
-          individualTrait: match.individualTrait || newTrait,
-        }))
-      );
-    }
-  };
-
-  const handlePersonaChange = (newPersona: string) => {
-    setPersona(newPersona);
-    if (newPersona) {
-      setMatches(prevMatches =>
-        prevMatches.map(match => ({
-          ...match,
-          individualPersona: match.individualPersona || newPersona,
-        }))
-      );
-    }
-  };
-
-  const handleCommonBanChange = (newBannedCharacters: string[]) => {
-    setBannedCharacters(newBannedCharacters);
-    if (newBannedCharacters.length > 0) {
-      setMatches(prevMatches =>
-        prevMatches.map(match => ({
-          ...match,
-          individualBannedCharacters:
-            match.individualBannedCharacters && match.individualBannedCharacters.length > 0
-              ? match.individualBannedCharacters
-              : newBannedCharacters,
-        }))
-      );
-    }
-  };
-
+  // 共通BANキャラのトグル
   const handleBanToggle = (name: string) => {
-    let newBannedCharacters: string[];
     if (bannedCharacters.includes(name)) {
-      newBannedCharacters = bannedCharacters.filter((c) => c !== name);
+      setBannedCharacters(bannedCharacters.filter((c) => c !== name));
     } else if (bannedCharacters.length < 3) {
-      newBannedCharacters = [...bannedCharacters, name];
-    } else {
-      return;
+      setBannedCharacters([...bannedCharacters, name]);
     }
-    handleCommonBanChange(newBannedCharacters);
+  };
+
+  // 「全試合に適用」ボタン：空欄の個別設定のみを埋める
+  const applyCommonSettingsToAll = () => {
+    setMatches(prevMatches =>
+      prevMatches.map(match => ({
+        ...match,
+        individualTrait: match.individualTrait || traitUsed,
+        individualPersona: match.individualPersona || persona,
+        individualBannedCharacters:
+          match.individualBannedCharacters && match.individualBannedCharacters.length > 0
+            ? match.individualBannedCharacters
+            : [...bannedCharacters],
+      }))
+    );
   };
 
   const handleMatchChange = (
@@ -220,7 +192,7 @@ export function MultiMatchEditor({ analyzeResults, onSave, onCancel }: MultiMatc
           <VStack spacing={4} align="stretch">
             <FormControl>
               <FormLabel>特質</FormLabel>
-              <Select value={traitUsed} onChange={(e) => handleTraitChange(e.target.value)}>
+              <Select value={traitUsed} onChange={(e) => setTraitUsed(e.target.value)}>
                 <option value="">選択してください</option>
                 {traits?.map((trait) => (
                   <option key={trait} value={trait}>
@@ -234,7 +206,7 @@ export function MultiMatchEditor({ analyzeResults, onSave, onCancel }: MultiMatc
               <FormLabel>人格</FormLabel>
               <Textarea
                 value={persona}
-                onChange={(e) => handlePersonaChange(e.target.value)}
+                onChange={(e) => setPersona(e.target.value)}
                 placeholder="使用した人格を入力..."
                 rows={2}
               />
@@ -279,6 +251,16 @@ export function MultiMatchEditor({ analyzeResults, onSave, onCancel }: MultiMatc
                 </Wrap>
               </Collapse>
             </FormControl>
+
+            <Divider />
+
+            <Button
+              colorScheme="green"
+              onClick={applyCommonSettingsToAll}
+              isDisabled={!traitUsed && !persona && bannedCharacters.length === 0}
+            >
+              全試合に適用（空欄のみ）
+            </Button>
           </VStack>
         </CardBody>
       </Card>
