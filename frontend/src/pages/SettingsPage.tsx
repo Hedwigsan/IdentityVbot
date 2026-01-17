@@ -9,7 +9,7 @@ import {
   Text,
   Button,
 } from '@chakra-ui/react';
-import { useAuth } from '../hooks/useAuth';
+import { useAuth } from '../contexts/AuthContext';
 
 export function SettingsPage() {
   const { user, logout } = useAuth();

@@ -3,7 +3,7 @@ import { Box, Spinner, Center } from '@chakra-ui/react';
 import { Header } from './components/common/Header';
 import { Footer } from './components/common/Footer';
 import { AnimatedBackground } from './components/common/AnimatedBackground';
-import { useAuth } from './hooks/useAuth';
+import { useAuth } from './contexts/AuthContext';
 import { RecordPage } from './pages/RecordPage';
 import { StatsPage } from './pages/StatsPage';
 import { HistoryPage } from './pages/HistoryPage';

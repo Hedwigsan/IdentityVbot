@@ -1,7 +1,7 @@
 import { Box, Button, Center, Image, Text, VStack } from '@chakra-ui/react';
 import { Navigate } from 'react-router-dom';
 import { FcGoogle } from 'react-icons/fc';
-import { useAuth } from '../hooks/useAuth';
+import { useAuth } from '../contexts/AuthContext';
 
 export function LoginPage() {
   const { isAuthenticated, login, isLoading } = useAuth();
