@@ -42,8 +42,36 @@ class OCRProcessor:
         """yomitokuの遅延ロード"""
         if self._yomitoku_analyzer is None:
             from yomitoku import DocumentAnalyzer  # type: ignore
-            logger.info("[INFO] Initializing yomitoku...")
-            self._yomitoku_analyzer = DocumentAnalyzer(device='cpu')
+            from ..config import get_settings
+
+            settings = get_settings()
+
+            if settings.ocr_lite_mode:
+                logger.info("[INFO] Initializing yomitoku (lite mode)...")
+                configs = {
+                    "ocr": {
+                        "text_recognizer": {
+                            "model_name": "parseq-tiny",
+                            "device": "cpu",
+                        },
+                        "text_detector": {
+                            "device": "cpu",
+                        },
+                    },
+                    "layout_analyzer": {
+                        "layout_parser": {
+                            "device": "cpu",
+                        },
+                        "table_structure_recognizer": {
+                            "device": "cpu",
+                        },
+                    },
+                }
+                self._yomitoku_analyzer = DocumentAnalyzer(configs=configs)
+            else:
+                logger.info("[INFO] Initializing yomitoku (normal mode)...")
+                self._yomitoku_analyzer = DocumentAnalyzer(device='cpu')
+
             logger.info("[SUCCESS] yomitoku loaded")
         return self._yomitoku_analyzer
 

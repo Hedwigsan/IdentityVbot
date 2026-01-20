@@ -15,6 +15,7 @@ class Settings(BaseSettings):
 
     # OCR
     ocr_templates_path: str = "templates/icons"
+    ocr_lite_mode: bool = True  # liteモード（parseq-tiny）で高速推論
 
     class Config:
         env_file = "../.env"
