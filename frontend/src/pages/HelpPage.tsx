@@ -178,7 +178,7 @@ export function HelpPage() {
             <Text>
               不具合の報告や機能のご要望は、
               <Link href="https://x.com/Subwigsan" color="blue.500" isExternal ml={1}>
-                XのDM
+                X
               </Link>
               までお願いします。
             </Text>
