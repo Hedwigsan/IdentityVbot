@@ -303,7 +303,7 @@ export const IconPositionAdjuster: React.FC<IconPositionAdjusterProps> = ({
 
       <Text fontSize="xs" color="gray.500">
         ※ 「この位置で再認識」をクリックすると、調整した位置で画像認識を再実行します。
-        認識が成功したら「設定を保存」で他のユーザーとも共有されます。
+        認識が成功したら「設定を保存」で今後同サイズの画像を読み込む際に、自動的に設定を使用します。
       </Text>
     </VStack>
   );

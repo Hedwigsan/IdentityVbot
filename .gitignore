@@ -108,3 +108,4 @@ pnpm-debug.log*
 # Frontend build
 frontend/dist/
 frontend/.vite/
+frontend/src/pages/HelpPage.tsx

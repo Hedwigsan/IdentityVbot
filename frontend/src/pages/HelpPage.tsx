@@ -82,7 +82,6 @@ export function HelpPage() {
                 <AccordionPanel pb={4}>
                   <Text>
                     はい、可能です。画像アップロード時に複数枚選択することで、まとめて記録できます。
-                    人格や特質などの共通設定は全試合に一括適用されます。
                   </Text>
                 </AccordionPanel>
               </AccordionItem>
