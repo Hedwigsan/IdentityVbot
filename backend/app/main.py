@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from concurrent.futures import ProcessPoolExecutor
-import multiprocessing
+from concurrent.futures import ThreadPoolExecutor
 from .config import get_settings
 from .auth.router import router as auth_router
 from .matches.router import router as matches_router
@@ -18,13 +17,14 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# OCR用プロセスプール（3並列）
-# 6GBメモリで3-4プロセスが適切（1プロセスあたり約1.5-2GB）
-ocr_process_pool = ProcessPoolExecutor(max_workers=3)
+# OCR用スレッドプール（4並列）
+# GILの制約はあるが、OCR処理はI/O待ちやネイティブライブラリ（C++）が多いため
+# スレッドプールでも並列化の恩恵がある
+ocr_process_pool = ThreadPoolExecutor(max_workers=4)
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """アプリケーション終了時にプロセスプールをシャットダウン"""
+    """アプリケーション終了時にスレッドプールをシャットダウン"""
     ocr_process_pool.shutdown(wait=True)
 
 # CORS設定
