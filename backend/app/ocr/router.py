@@ -62,10 +62,11 @@ async def analyze_image(
                 detail=f"ファイルサイズが大きすぎます（最大10MB）"
             )
 
-        # OCR処理（重い処理なのでスレッドプールで実行）
+        # OCR処理（重い処理なのでプロセスプールで実行）
+        from ..main import ocr_process_pool
         loop = asyncio.get_event_loop()
         ocr = get_ocr_processor(supabase)
-        result = await loop.run_in_executor(None, ocr.process_image, contents)
+        result = await loop.run_in_executor(ocr_process_pool, ocr.process_image, contents)
 
         # サバイバーデータを変換
         survivors = []
@@ -119,9 +120,10 @@ async def analyze_multiple_images(
                 logger.warning(f"ファイルサイズ超過: {len(contents)} bytes")
                 continue
 
+            from ..main import ocr_process_pool
             loop = asyncio.get_event_loop()
             ocr = get_ocr_processor(supabase)
-            result = await loop.run_in_executor(None, ocr.process_image, contents)
+            result = await loop.run_in_executor(ocr_process_pool, ocr.process_image, contents)
 
             survivors = []
             for s in result.get("survivors", []):
@@ -190,9 +192,10 @@ async def analyze_image_with_layout(
             )
 
         # OCR処理（カスタムレイアウトを渡す）
+        from ..main import ocr_process_pool
         loop = asyncio.get_event_loop()
         ocr = get_ocr_processor(supabase)
-        result = await loop.run_in_executor(None, ocr.process_image, contents, custom_layout)
+        result = await loop.run_in_executor(ocr_process_pool, ocr.process_image, contents, custom_layout)
 
         # サバイバーデータを変換
         survivors = []

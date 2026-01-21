@@ -47,7 +47,7 @@ class OCRProcessor:
             settings = get_settings()
 
             if settings.ocr_lite_mode:
-                logger.info("[INFO] Initializing yomitoku (lite mode)...")
+                logger.info("[INFO] Initializing yomitoku (lite mode, layout_analyzer disabled)...")
                 configs = {
                     "ocr": {
                         "text_recognizer": {
@@ -58,14 +58,7 @@ class OCRProcessor:
                             "device": "cpu",
                         },
                     },
-                    "layout_analyzer": {
-                        "layout_parser": {
-                            "device": "cpu",
-                        },
-                        "table_structure_recognizer": {
-                            "device": "cpu",
-                        },
-                    },
+                    # layout_analyzerを削除してLayoutParserとTableStructureRecognizerを無効化
                 }
                 self._yomitoku_analyzer = DocumentAnalyzer(configs=configs)
             else:
