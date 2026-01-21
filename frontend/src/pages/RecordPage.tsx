@@ -105,7 +105,7 @@ export function RecordPage() {
 
       toast({
         title: '再認識完了',
-        description: '結果を確認して「設定を保存」すると、他のユーザーとも共有されます',
+        description: '結果を確認して「設定を保存」すると、今後自動的に設定が使用されます。',
         status: 'success',
         duration: 5000,
       });

@@ -121,7 +121,10 @@ export function HelpPage() {
                 <AccordionPanel pb={4}>
                   <VStack align="stretch" spacing={2}>
                     <Text>
-                      画像解析後に表示される編集画面で、手動で修正することができます。
+                      使用端末によっては初回使用時は正しく認識されない可能性があります。画像認識後、ページ上部の「位置を調整」ボタンからアイコン位置を正しく設定してください。
+                    </Text>
+                    <Text>
+                      また、画像解析後に表示される編集画面で、手動で修正することもできます。
                     </Text>
                     <Text>• 勝敗、マップ、使用ハンターなどをドロップダウンから選択</Text>
                     <Text>• サバイバー情報（キャラクター、牽制時間、解読進捗）を入力</Text>
@@ -174,8 +177,8 @@ export function HelpPage() {
             </Heading>
             <Text>
               不具合の報告や機能のご要望は、
-              <Link href="https://github.com/yourusername/identity-archive/issues" color="blue.500" isExternal ml={1}>
-                GitHubのIssue
+              <Link href="https://x.com/Subwigsan" color="blue.500" isExternal ml={1}>
+                XのDM
               </Link>
               までお願いします。
             </Text>

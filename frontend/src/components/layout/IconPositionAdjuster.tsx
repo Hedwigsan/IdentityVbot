@@ -162,6 +162,20 @@ export const IconPositionAdjuster: React.FC<IconPositionAdjusterProps> = ({
         上から順に：勝利時は「ハンター、サバイバー1〜4」、敗北時は「サバイバー1〜4、ハンター」です。
       </Text>
 
+      {/* 参考画像を追加 */}
+      <Box
+        borderRadius="md"
+        overflow="hidden"
+        border="1px solid"
+        borderColor="gray.300"
+      >
+        <img
+          src="/icon_setting.png"
+          alt="アイコン位置調整の参考例"
+          style={{ width: '100%', height: 'auto' }}
+        />
+      </Box>
+
       {/* 画像プレビュー + マーカー */}
       <Box
         ref={canvasRef}

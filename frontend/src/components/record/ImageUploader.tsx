@@ -109,7 +109,7 @@ export function ImageUploader({ onAnalyzeComplete }: ImageUploaderProps) {
                 </HStack>
                 <Progress size="sm" isIndeterminate w="200px" />
                 <Text fontSize="sm" color="gray.500">
-                  画像1枚につき5〜15秒かかる場合があります
+                  画像1枚につき30秒以上かかる場合があります
                 </Text>
               </>
             ) : (
